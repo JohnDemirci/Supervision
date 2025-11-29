@@ -9,10 +9,15 @@ import Foundation
 
 @MainActor
 @Observable
+@dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol> {
     public typealias State = Feature.State
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
+    
+    public subscript <Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
+        state[keyPath: keyPath]
+    }
 
     private let dependency: Dependency
     

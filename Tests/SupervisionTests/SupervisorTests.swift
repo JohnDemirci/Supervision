@@ -19,7 +19,6 @@ struct SupervisorTests {
         )
         
         supervisor.send(.addPlayer("James"))
-        supervisor.send(.playMatch)
         supervisor.send(.setLocalLeague("Premier League"))
         
         #expect(supervisor.state.playerNames == ["James"])
@@ -49,6 +48,8 @@ struct FootballClubFeature: FeatureProtocol {
             context.batch {
                 $0.playerNames.wrappedValue.append(name)
             }
+            
+            process(action: .playMatch, context: context, dependency: dependency)
             
         case .playMatch:
             context.mutate(\.matchesPlayed, to: context.matchesPlayed + 1)
