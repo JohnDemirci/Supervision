@@ -15,6 +15,9 @@ public final class Supervisor<Feature: FeatureProtocol> {
     public typealias Dependency = Feature.Dependency
 
     private let dependency: Dependency
+    
+    public let id: ReferenceIdentifier
+    
     internal let feature: Feature
 
     /// The single source of truth for state
@@ -29,10 +32,12 @@ public final class Supervisor<Feature: FeatureProtocol> {
 
     // MARK: - Initialization
 
-    public init(
+    init(
+        id: ReferenceIdentifier,
         state: State,
         dependency: Dependency
     ) {
+        self.id = id
         // Validate that State is a value type (best effort)
         let mirror = Mirror(reflecting: state)
         if mirror.displayStyle != .struct && mirror.displayStyle != .enum {
@@ -146,9 +151,28 @@ public final class Supervisor<Feature: FeatureProtocol> {
 
 // MARK: - Convenience Initializer
 
-extension Supervisor where Dependency == Void {
-    public convenience init(_ state: State) {
-        self.init(state: state, dependency: ())
+extension Supervisor where State: Identifiable {
+    public convenience init(
+        state: State,
+        dependency: Dependency
+    ) {
+        self.init(
+            id: ReferenceIdentifier(id: state.id as AnyHashable),
+            state: state,
+            dependency: dependency
+        )
     }
 }
 
+extension Supervisor {
+    public convenience init(
+        state: State,
+        dependency: Dependency
+    ) {
+        self.init(
+            id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable),
+            state: state,
+            dependency: dependency
+        )
+    }
+}
