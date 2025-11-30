@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 @MainActor
 @Observable
@@ -14,6 +15,9 @@ public final class Supervisor<Feature: FeatureProtocol> {
     public typealias State = Feature.State
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
+    
+    nonisolated
+    private let logger: Logger
     
     public subscript <Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
         state[keyPath: keyPath]
@@ -43,16 +47,20 @@ public final class Supervisor<Feature: FeatureProtocol> {
         dependency: Dependency
     ) {
         self.id = id
+        self.logger = .init(
+            subsystem: "com.Supervision.\(Feature.self)",
+            category: "Supervisor"
+        )
         // Validate that State is a value type (best effort)
         let mirror = Mirror(reflecting: state)
         if mirror.displayStyle != .struct && mirror.displayStyle != .enum {
-            #if DEBUG
-            print("""
+            logger.debug(
+                """
                 ⚠️ Warning: State should be a struct or enum (value type).
                 Using reference types (classes) can lead to unexpected behavior.
                 Current State type: \(type(of: state))
-                """)
-            #endif
+                """
+            )
         }
 
         self.state = state
@@ -80,11 +88,13 @@ public final class Supervisor<Feature: FeatureProtocol> {
         // Reentrancy protection: prevent send() from being called during process()
         guard !isProcessing else {
             #if DEBUG
-            print("""
+            let logMessage: String = """
                 ⚠️ Reentrancy detected: Cannot call send() while processing an action.
                 Action queued for execution after current action completes.
                 Action: \(action)
-                """)
+            """
+            
+            logger.debug("\(logMessage)")
             #endif
             queuedActions.append(action)
             return
