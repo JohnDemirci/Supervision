@@ -31,41 +31,46 @@ struct FormFeature: FeatureProtocol {
         case ageChanged(Int)
         case subscriptionToggled(Bool)
     }
-
-    func process(action: Action, context: borrowing Context<State>, dependency: Void) {
+    
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
         switch action {
         case .usernameChanged(let username):
             // Validate and trim username
             let trimmed = username.trimmingCharacters(in: .whitespaces)
-            context.mutate(\.username, to: trimmed)
+            context.modify(\.username, to: trimmed)
 
             if trimmed.count < 3 {
-                context.mutate(\.usernameError, to: "Username must be at least 3 characters")
+                context.modify(\.usernameError, to: "Username must be at least 3 characters")
             } else {
-                context.mutate(\.usernameError, to: nil)
+                context.modify(\.usernameError, to: nil)
             }
+            return .empty()
 
         case .emailChanged(let email):
             // Lowercase email
             let lowercased = email.lowercased()
-            context.mutate(\.email, to: lowercased)
+            context.modify(\.email, to: lowercased)
 
             // Validate email
             if lowercased.contains("@") && lowercased.contains(".") {
-                context.mutate(\.emailError, to: nil)
+                context.modify(\.emailError, to: nil)
             } else {
-                context.mutate(\.emailError, to: "Invalid email format")
+                context.modify(\.emailError, to: "Invalid email format")
             }
+            return .empty()
 
         case .ageChanged(let age):
             // Clamp age
             let clamped = max(0, min(120, age))
-            context.mutate(\.age, to: clamped)
+            context.modify(\.age, to: clamped)
+            return .empty()
 
         case .subscriptionToggled(let isSubscribed):
-            context.mutate(\.isSubscribed, to: isSubscribed)
+            context.modify(\.isSubscribed, to: isSubscribed)
+            return .empty()
         }
     }
+
 }
 
 struct UIStateFeature: FeatureProtocol {
@@ -80,9 +85,9 @@ struct UIStateFeature: FeatureProtocol {
     enum Action {
         // No actions needed for pure UI state
     }
-
-    func process(action: Action, context: borrowing Context<State>, dependency: Void) {
-        // No actions to process
+    
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+        
     }
 }
 
@@ -247,12 +252,13 @@ struct BindingTests {
             enum Action {
                 case nameChanged(String)
             }
-
-            func process(action: Action, context: borrowing Context<State>, dependency: Void) {
+            
+            func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
                 switch action {
                 case .nameChanged(let name):
                     // Transform to uppercase
-                    context.mutate(\.name, to: name.uppercased())
+                    context.modify(\.name, to: name.uppercased())
+                    return .empty()
                 }
             }
         }
@@ -361,12 +367,13 @@ struct BindingTests {
             enum Action {
                 case volumeChangeCompleted(Double)
             }
-
-            func process(action: Action, context: borrowing Context<State>, dependency: Void) {
+            
+            func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
                 switch action {
                 case .volumeChangeCompleted(let volume):
                     // Log, trigger haptics, save to UserDefaults, etc.
-                    context.mutate(\.lastCommittedVolume, to: volume)
+                    context.modify(\.lastCommittedVolume, to: volume)
+                    return .empty()
                 }
             }
         }

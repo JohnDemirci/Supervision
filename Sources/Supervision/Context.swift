@@ -12,25 +12,15 @@ public struct Context<State>: ~Copyable {
     internal let mutateFn: (AnyMutation<State>) -> Void
 
     @usableFromInline
-    internal let statePointer: UnsafePointer<State>
-
-    @usableFromInline
-    internal let enableBatchingFn: () -> Void
-
-    @usableFromInline
-    internal let flushBatchFn: () -> Void
+    internal let statePointer: UnsafeMutablePointer<State>
 
     @inlinable
     internal init(
         mutateFn: @escaping (AnyMutation<State>) -> Void,
-        statePointer: UnsafePointer<State>,
-        enableBatchingFn: @escaping () -> Void,
-        flushBatchFn: @escaping () -> Void
+        statePointer: UnsafeMutablePointer<State>
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
-        self.enableBatchingFn = enableBatchingFn
-        self.flushBatchFn = flushBatchFn
     }
 
     // MARK: - Zero-Copy Reads
@@ -46,37 +36,34 @@ public struct Context<State>: ~Copyable {
     }
 
     @inlinable
-    public var currentState: State {
+    public var state: State {
         statePointer.pointee
     }
 
     // MARK: - Mutations
 
     @inlinable
-    public func mutate<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+    public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
         mutateFn(.init(keyPath, newValue))
     }
 
     @inlinable
-    public func transform<Value>(
+    public func modify<Value>(
         _ keyPath: WritableKeyPath<State, Value>,
-        _ modify: (Value) -> Value
+        _ modify: (inout Value) -> Void
     ) {
-        let current = statePointer.pointee[keyPath: keyPath]
-        mutateFn(.init(keyPath, modify(current)))
+        modify(&statePointer.pointee[keyPath: keyPath])
     }
 
     // MARK: - Batching
 
     @inline(never)
-    public func batch(_ build: (borrowing BatchBuilder<State>) -> Void) {
-        enableBatchingFn()
-        defer { flushBatchFn() }
-
-        let builder = BatchBuilder<State>(
-            mutateFn: mutateFn,
-            statePointer: statePointer
+    public func modify(_ build: (borrowing BatchBuilder<State>) -> Void) {
+        build(
+            BatchBuilder<State>(
+                mutateFn: mutateFn,
+                statePointer: statePointer
+            )
         )
-        build(builder)
     }
 }

@@ -2,7 +2,3 @@
 // https://docs.swift.org/swift-book
 
 import Foundation
-
-public protocol Supervision {
-    
-}

@@ -43,16 +43,16 @@ extension Supervisor {
     ///     func process(action: Action, context: borrowing Context<State>, dependency: Void) {
     ///         switch action {
     ///         case .nameChanged(let name):
-    ///             context.mutate(\.name, to: name.trimmingCharacters(in: .whitespaces))
+    ///             context.modify(\.name, to: name.trimmingCharacters(in: .whitespaces))
     ///
     ///         case .emailChanged(let email):
-    ///             context.mutate(\.email, to: email.lowercased())
+    ///             context.modify(\.email, to: email.lowercased())
     ///
     ///         case .ageChanged(let age):
-    ///             context.mutate(\.age, to: max(0, min(120, age)))
+    ///             context.modify(\.age, to: max(0, min(120, age)))
     ///
     ///         case .toggleEnabled(let enabled):
-    ///             context.mutate(\.isEnabled, to: enabled)
+    ///             context.modify(\.isEnabled, to: enabled)
     ///         }
     ///     }
     /// }
@@ -135,7 +135,7 @@ extension Supervisor {
     ///
     /// ## Performance
     /// - **Getter**: Zero-copy read from state via KeyPath, O(1)
-    /// - **Setter**: Routes through send() → process() → context.mutate()
+    /// - **Setter**: Routes through send() → process() → context.modify()
     /// - **Animation**: Applied via `withAnimation()` or `withTransaction()`
     /// - **@Observable**: Ensures SwiftUI updates efficiently when state changes
     ///
@@ -214,7 +214,7 @@ extension Supervisor {
     ///     func process(action: Action, context: borrowing Context<State>, dependency: Void) {
     ///         switch action {
     ///         case .usernameChanged(let username):
-    ///             context.mutate(\.username, to: username)
+    ///             context.modify(\.username, to: username)
     ///
     ///         case .volumeChangeCompleted(let volume):
     ///             // Log final volume, trigger haptics, etc.

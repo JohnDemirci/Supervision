@@ -10,10 +10,10 @@ import Foundation
 @MainActor
 public protocol FeatureProtocol {
     associatedtype State
-    associatedtype Action
-    associatedtype Dependency
+    associatedtype Action: Sendable
+    associatedtype Dependency: Sendable
 
-    func process(action: Action, context: borrowing Context<State>, dependency: Dependency)
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency>
 
     init()
 }
