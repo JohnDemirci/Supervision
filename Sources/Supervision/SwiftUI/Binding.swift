@@ -40,7 +40,7 @@ extension Supervisor {
     ///         case toggleEnabled(Bool)
     ///     }
     ///
-    ///     func process(action: Action, context: borrowing Context<State>, dependency: Void) {
+    ///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
     ///         switch action {
     ///         case .nameChanged(let name):
     ///             context.modify(\.name, to: name.trimmingCharacters(in: .whitespaces))
@@ -54,6 +54,7 @@ extension Supervisor {
     ///         case .toggleEnabled(let enabled):
     ///             context.modify(\.isEnabled, to: enabled)
     ///         }
+    ///         return .empty()
     ///     }
     /// }
     ///
@@ -211,7 +212,7 @@ extension Supervisor {
     ///         case volumeChangeCompleted(Double)
     ///     }
     ///
-    ///     func process(action: Action, context: borrowing Context<State>, dependency: Void) {
+    ///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
     ///         switch action {
     ///         case .usernameChanged(let username):
     ///             context.modify(\.username, to: username)
@@ -223,7 +224,9 @@ extension Supervisor {
     ///         case .saveSettings:
     ///             // Save all settings to server
     ///             // Volume was mutated directly via directBinding
+    ///             break
     ///         }
+    ///         return .empty()
     ///     }
     /// }
     ///

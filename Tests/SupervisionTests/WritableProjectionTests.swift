@@ -13,11 +13,11 @@ private final class User {
         var text: String = ""
         var number: Number = .init()
     }
-    
+
     struct Number {
         var num: Int = 0
     }
-    
+
     var state: State = .init()
 }
 
@@ -26,7 +26,7 @@ struct WritableProjectionTests {
     @Test
     func writableProjection() async throws {
         let user = User()
-        
+
         withUnsafeMutablePointer(to: &user.state) { pointer in
             let projection = WritableProjection<User.State, String>(
                 keyPath: \.text,
@@ -35,17 +35,17 @@ struct WritableProjectionTests {
                 },
                 statePointer: pointer
             )
-            
+
             projection.wrappedValue = "Hello, World!"
-            
+
             #expect(projection.wrappedValue == "Hello, World!")
         }
     }
-    
+
     @Test
     func projectionWithNested() async throws {
         let user = User()
-        
+
         withUnsafeMutablePointer(to: &user.state) { pointer in
             let projection = WritableProjection<User.State, User.Number>(
                 keyPath: \.number,
@@ -54,9 +54,9 @@ struct WritableProjectionTests {
                 },
                 statePointer: pointer
             )
-            
+
             projection.num.wrappedValue = 42
-            
+
             #expect(projection.num.wrappedValue == 42)
         }
     }

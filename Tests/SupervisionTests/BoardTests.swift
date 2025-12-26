@@ -128,7 +128,7 @@ struct BoardTests {
         #expect(deviceSupervisor === deviceSupervisor2)
     }
     
-    @Test func multopleSupervisorsWithDifferentIdentities() async throws {
+    @Test func multipleSupervisorsWithDifferentIdentities() async throws {
         let board = Board(dependency: AppDependency())
         
         let deviceState1 = DeviceFeature.State(id: "1")
@@ -171,7 +171,7 @@ struct BoardTests {
     }
     
     @Test
-    func identifiableVoidDepenedncyReturnsTheSameSupervisor() async throws {
+    func identifiableVoidDependencyReturnsTheSameSupervisor() async throws {
         let board = Board(dependency: AppDependency())
         
         let void1: Supervisor<IdentifiableVoidFeature> = board.supervisor(
