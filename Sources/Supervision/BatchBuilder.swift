@@ -5,21 +5,63 @@
 //  Created by John on 11/29/25.
 //
 
-/// Builder for batching state mutations with ergonomic syntax
+/// A non-copyable builder for performing multiple state mutations with ergonomic syntax.
 ///
-/// Provides property setter syntax while maintaining internal(set) protection.
-/// Never exposes `inout State` publicly - uses KeyPath-based mutations internally.
+/// `BatchBuilder` is used within ``Context/modify(_:)-6c794`` to group related
+/// state changes together. It provides property-like syntax for setting values.
 ///
-/// ## Design
-/// - ~Copyable: cannot be stored or copied (compile-time enforced)
-/// - borrowing: cannot escape the batch closure
-/// - @dynamicMemberLookup: enables `builder.property = value` syntax
-/// - Internally collects mutations as `AnyMutation<State>` objects
+/// ## Overview
 ///
-/// ## Safety
-/// - Does NOT provide direct mutable access to state
-/// - All mutations go through the existing mutation infrastructure
-/// - Maintains internal(set) protection on Supervisor.state
+/// Use BatchBuilder to express multiple mutations as a logical group:
+///
+/// ```swift
+/// func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+///     switch action {
+///     case .dataLoaded(let data):
+///         context.modify { batch in
+///             batch.isLoading = false
+///             batch.data = data
+///             batch.lastUpdated = Date()
+///             batch.error = nil
+///         }
+///         return .empty()
+///     }
+/// }
+/// ```
+///
+/// ## Property-Like Syntax
+///
+/// BatchBuilder uses `@dynamicMemberLookup` to enable direct property assignment:
+///
+/// ```swift
+/// context.modify { batch in
+///     batch.userName = "John"      // Sets state.userName
+///     batch.isEnabled = true       // Sets state.isEnabled
+///     batch.user.email = "a@b.com" // Nested property access
+/// }
+/// ```
+///
+/// ## Reading Values
+///
+/// You can also read current values within the batch:
+///
+/// ```swift
+/// context.modify { batch in
+///     let current = batch.count    // Read current value
+///     batch.count = current + 1    // Set new value
+/// }
+/// ```
+///
+/// ## Non-Copyable Design
+///
+/// BatchBuilder is marked `~Copyable` to prevent it from escaping the closure.
+/// This ensures all mutations are applied synchronously within the batch scope.
+///
+/// ## Implementation Notes
+///
+/// - Each property assignment creates an `AnyMutation` applied immediately
+/// - There is no transactional rollback; mutations are applied as they occur
+/// - Batching is for code organization, not atomicity
 @dynamicMemberLookup
 public struct BatchBuilder<State>: ~Copyable {
     private let mutateFn: (AnyMutation<State>) -> Void
@@ -33,17 +75,19 @@ public struct BatchBuilder<State>: ~Copyable {
         self.statePointer = statePointer
     }
 
-    /// Provides write-only property access via subscript setter
-    /// - Parameter keyPath: The property to mutate
-    /// - Returns: A WritableProjection that captures the setter
+    /// Provides read/write access to state properties via dynamic member lookup.
     ///
-    /// This enables the ergonomic syntax:
+    /// This subscript returns a ``WritableProjection`` that enables property-like syntax:
+    ///
     /// ```swift
-    /// builder.firstName = "John"  // Uses this subscript
+    /// context.modify { batch in
+    ///     batch.userName = "John"  // Calls this subscript, then WritableProjection's setter
+    ///     let name = batch.userName // Reads via WritableProjection's getter
+    /// }
     /// ```
     ///
-    /// The setter is called when you assign a value, which internally
-    /// creates an AnyMutation and applies it through the mutation system.
+    /// - Parameter keyPath: A writable key path to the state property.
+    /// - Returns: A ``WritableProjection`` for reading and writing the value.
     public subscript<Value>(dynamicMember keyPath: WritableKeyPath<State, Value>) -> WritableProjection<State, Value> {
         WritableProjection(
             keyPath: keyPath,

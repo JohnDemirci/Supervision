@@ -14,10 +14,18 @@ struct AppDependency {
     let userClient: UserClient = .init()
 }
 
-final class UserClient {}
+final class UserClient: Sendable {}
 
 struct UserFeature: FeatureProtocol {
-    struct Dependency {
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+        switch action {
+        case .changeName(let newName):
+            context.modify(\.name, to: newName)
+            return .empty()
+        }
+    }
+    
+    struct Dependency: Sendable {
         let client: UserClient
     }
     
@@ -28,17 +36,14 @@ struct UserFeature: FeatureProtocol {
     enum Action {
         case changeName(String)
     }
-    
-    func process(action: Action, context: borrowing Context<State>, dependency: Dependency) {
-        switch action {
-        case .changeName(let newName):
-            context.mutate(\.name, to: newName)
-        }
-    }
 }
 
 struct DeviceFeature: FeatureProtocol {
-    struct Dependency {
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+        return .empty()
+    }
+    
+    struct Dependency: Sendable {
         let client: UserClient
     }
     
@@ -50,8 +55,6 @@ struct DeviceFeature: FeatureProtocol {
     enum Action {
         case nothing
     }
-    
-    func process(action: Action, context: borrowing Context<State>, dependency: Dependency) {}
 }
 
 struct VoidFeature: FeatureProtocol {
@@ -63,8 +66,8 @@ struct VoidFeature: FeatureProtocol {
         case nothing
     }
     
-    func process(action: Action, context: borrowing Context<State>, dependency: Void) {
-        
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+        return .empty()
     }
 }
 
@@ -79,8 +82,8 @@ struct IdentifiableVoidFeature: FeatureProtocol {
         case nothing
     }
     
-    func process(action: Action, context: borrowing Context<State>, dependency: Void) {
-        
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+        return .empty()
     }
 }
 
@@ -125,7 +128,7 @@ struct BoardTests {
         #expect(deviceSupervisor === deviceSupervisor2)
     }
     
-    @Test func multopleSupervisorsWithDifferentIdentities() async throws {
+    @Test func multipleSupervisorsWithDifferentIdentities() async throws {
         let board = Board(dependency: AppDependency())
         
         let deviceState1 = DeviceFeature.State(id: "1")
@@ -168,7 +171,7 @@ struct BoardTests {
     }
     
     @Test
-    func identifiableVoidDepenedncyReturnsTheSameSupervisor() async throws {
+    func identifiableVoidDependencyReturnsTheSameSupervisor() async throws {
         let board = Board(dependency: AppDependency())
         
         let void1: Supervisor<IdentifiableVoidFeature> = board.supervisor(

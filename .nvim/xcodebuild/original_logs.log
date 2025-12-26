@@ -1,0 +1,373 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -scheme Supervision -destination id=00006021-001461441A43C01E -parallelizeTargets -resultBundlePath /Users/john/Documents/dev/Supervision/.nvim/xcodebuild/test.xcresult -parallel-testing-enabled NO
+
+Resolve Package Graph
+2025-12-25 21:06:18.843 xcodebuild[87539:2636284] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+
+
+Resolved source packages:
+  Supervision: /Users/john/Documents/dev/Supervision
+
+Writing result bundle at path:
+	/Users/john/Documents/dev/Supervision/.nvim/xcodebuild/test.xcresult
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:arm64, variant:Mac Catalyst, id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:x86_64, variant:Mac Catalyst, id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:arm64, variant:DriverKit, id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:00006021-001461441A43C01E, name:My Mac }
+{ platform:macOS, arch:arm64_32, variant:Designed for [iPad,iPhone], id:00006021-001461441A43C01E, name:My Mac }
+Test Suite 'All tests' started at 2025-12-25 21:06:19.528.
+Test Suite 'All tests' passed at 2025-12-25 21:06:19.528.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+􀟈 Test run started.
+􀄵 Testing Library Version: 1501
+􀄵 Target Platform: arm64e-apple-macos14.0
+􀟈 Suite "BatchBuilder" started.
+􀟈 Test something() started.
+􁁛 Test something() passed after 0.001 seconds.
+􁁛 Suite "BatchBuilder" passed after 0.001 seconds.
+􀟈 Suite "SwiftUI Binding Tests" started.
+􀟈 Test "action binding sends action on value change" started.
+􁁛 Test "action binding sends action on value change" passed after 0.001 seconds.
+􀟈 Test "action binding validates input" started.
+􁁛 Test "action binding validates input" passed after 0.001 seconds.
+􀟈 Test "action binding transforms email to lowercase" started.
+􁁛 Test "action binding transforms email to lowercase" passed after 0.001 seconds.
+􀟈 Test "action binding clamps age value" started.
+􁁛 Test "action binding clamps age value" passed after 0.001 seconds.
+􀟈 Test "action binding works with toggle" started.
+􁁛 Test "action binding works with toggle" passed after 0.001 seconds.
+􀟈 Test "direct binding mutates state without actions" started.
+􁁛 Test "direct binding mutates state without actions" passed after 0.001 seconds.
+􀟈 Test "direct binding updates state immediately" started.
+􁁛 Test "direct binding updates state immediately" passed after 0.001 seconds.
+􀟈 Test "direct binding works with integer selection" started.
+􁁛 Test "direct binding works with integer selection" passed after 0.001 seconds.
+􀟈 Test "action binding vs direct binding behavior" started.
+􁁛 Test "action binding vs direct binding behavior" passed after 0.001 seconds.
+􀟈 Test "bindings read current state correctly" started.
+􁁛 Test "bindings read current state correctly" passed after 0.001 seconds.
+􀟈 Test "action binding with custom animation parameter" started.
+􁁛 Test "action binding with custom animation parameter" passed after 0.001 seconds.
+􀟈 Test "direct binding with custom animation parameter" started.
+􁁛 Test "direct binding with custom animation parameter" passed after 0.001 seconds.
+􀟈 Test "action binding without animation parameter" started.
+􁁛 Test "action binding without animation parameter" passed after 0.001 seconds.
+􀟈 Test "direct binding without animation parameter" started.
+􁁛 Test "direct binding without animation parameter" passed after 0.001 seconds.
+􀟈 Test "hybrid pattern - direct binding with completion action" started.
+􁁛 Test "hybrid pattern - direct binding with completion action" passed after 0.001 seconds.
+􀟈 Test "multiple bindings to same supervisor" started.
+􁁛 Test "multiple bindings to same supervisor" passed after 0.001 seconds.
+􀟈 Test "binding animation parameter is optional" started.
+􁁛 Test "binding animation parameter is optional" passed after 0.001 seconds.
+􁁛 Suite "SwiftUI Binding Tests" passed after 0.024 seconds.
+􀟈 Suite "Board" started.
+􀟈 Test identicalSupervisors() started.
+Resolve Package Graph
+
+􁁛 Test identicalSupervisors() passed after 3.011 seconds.
+􀟈 Test identicalIndetifiableSupervisorsReturnsTheSameSupervisor() started.
+􁁛 Test identicalIndetifiableSupervisorsReturnsTheSameSupervisor() passed after 0.001 seconds.
+􀟈 Test multipleSupervisorsWithDifferentIdentities() started.
+􁁛 Test multipleSupervisorsWithDifferentIdentities() passed after 0.002 seconds.
+􀟈 Test voidDependency() started.
+􁁛 Test voidDependency() passed after 0.001 seconds.
+􀟈 Test identifiableVoidDependency() started.
+􁁛 Test identifiableVoidDependency() passed after 0.001 seconds.
+􀟈 Test identifiableVoidDependencyReturnsTheSameSupervisor() started.
+􁁛 Test identifiableVoidDependencyReturnsTheSameSupervisor() passed after 0.001 seconds.
+􁁛 Suite "Board" passed after 3.018 seconds.
+􀟈 Suite "Context" started.
+􀟈 Test contextMutation() started.
+􁁛 Test contextMutation() passed after 0.001 seconds.
+􀟈 Test transform() started.
+􁁛 Test transform() passed after 0.001 seconds.
+􀟈 Test "dynamicMemberLookups should show the correct value" started.
+􁁛 Test "dynamicMemberLookups should show the correct value" passed after 0.001 seconds.
+􀟈 Test "Batching mutations should modify all at once" started.
+􁁛 Test "Batching mutations should modify all at once" passed after 0.001 seconds.
+􀟈 Test "read function call" started.
+􁁛 Test "read function call" passed after 0.001 seconds.
+􁁛 Suite "Context" passed after 0.002 seconds.
+􀟈 Test example() started.
+􁁛 Test example() passed after 0.001 seconds.
+􀟈 Suite "SupervisorTests" started.
+􀟈 Test testSend() started.
+Resolve Package Graph
+
+􁁛 Test testSend() passed after 1.552 seconds.
+􁁛 Suite "SupervisorTests" passed after 1.552 seconds.
+􀟈 Suite "Work Factory Methods" started.
+􀟈 Test "empty() creates a none operation" started.
+􁁛 Test "empty() creates a none operation" passed after 0.001 seconds.
+􀟈 Test "cancel(_:) creates a cancellation operation with correct ID" started.
+􁁛 Test "cancel(_:) creates a cancellation operation with correct ID" passed after 0.001 seconds.
+􀟈 Test "cancel(_:) with empty string ID" started.
+􁁛 Test "cancel(_:) with empty string ID" passed after 0.001 seconds.
+􀟈 Test "fireAndForget creates correct operation type" started.
+􁁛 Test "fireAndForget creates correct operation type" passed after 0.001 seconds.
+􀟈 Test "fireAndForget with custom priority" started.
+􁁛 Test "fireAndForget with custom priority" passed after 0.002 seconds.
+􀟈 Test "fireAndForget can access environment" started.
+􁁛 Test "fireAndForget can access environment" passed after 0.001 seconds.
+􀟈 Test "run creates correct operation type" started.
+􁁛 Test "run creates correct operation type" passed after 0.001 seconds.
+􀟈 Test "run with custom priority" started.
+􁁛 Test "run with custom priority" passed after 0.001 seconds.
+􀟈 Test "run(_:toAction:) handles success result" started.
+􁁛 Test "run(_:toAction:) handles success result" passed after 0.001 seconds.
+􀟈 Test "run(_:toAction:) handles failure result" started.
+􁁛 Test "run(_:toAction:) handles failure result" passed after 0.001 seconds.
+􀟈 Test "run(_:toAction:) with custom priority" started.
+􁁛 Test "run(_:toAction:) with custom priority" passed after 0.001 seconds.
+􀟈 Test "run(_:toAction:) passes Result directly" started.
+􁁛 Test "run(_:toAction:) passes Result directly" passed after 0.001 seconds.
+􁁛 Suite "Work Factory Methods" passed after 0.009 seconds.
+􀟈 Suite "Work Transformations" started.
+􀟈 Test "map transforms output correctly" started.
+􁁛 Test "map transforms output correctly" passed after 0.001 seconds.
+􀟈 Test "map preserves cancellation ID" started.
+􁁛 Test "map preserves cancellation ID" passed after 0.001 seconds.
+􀟈 Test "map throws on none operation" started.
+􁁛 Test "map throws on none operation" passed after 0.001 seconds.
+􀟈 Test "map throws on cancellation operation" started.
+􁁛 Test "map throws on cancellation operation" passed after 0.001 seconds.
+􀟈 Test "map throws on fireAndForget operation" started.
+􁁛 Test "map throws on fireAndForget operation" passed after 0.001 seconds.
+􀟈 Test "flatMap chains work correctly" started.
+􁁛 Test "flatMap chains work correctly" passed after 0.001 seconds.
+􀟈 Test "flatMap preserves priority from original work" started.
+􁁛 Test "flatMap preserves priority from original work" passed after 0.001 seconds.
+􀟈 Test "flatMap throws on none operation" started.
+􁁛 Test "flatMap throws on none operation" passed after 0.001 seconds.
+􀟈 Test "flatMap throws on cancellation operation" started.
+􁁛 Test "flatMap throws on cancellation operation" passed after 0.001 seconds.
+􀟈 Test "flatMap throws on fireAndForget operation" started.
+􁁛 Test "flatMap throws on fireAndForget operation" passed after 0.001 seconds.
+􀟈 Test "catch attaches error handler" started.
+􁁛 Test "catch attaches error handler" passed after 0.001 seconds.
+􀟈 Test "catch preserves operation" started.
+􁁛 Test "catch preserves operation" passed after 0.001 seconds.
+􀟈 Test "catch preserves cancellation ID" started.
+􁁛 Test "catch preserves cancellation ID" passed after 0.001 seconds.
+􀟈 Test "catch can be chained" started.
+􁁛 Test "catch can be chained" passed after 0.001 seconds.
+􁁛 Suite "Work Transformations" passed after 0.025 seconds.
+􀟈 Suite "Work Cancellable" started.
+􀟈 Test "cancellable(id:) attaches the ID correctly" started.
+􁁛 Test "cancellable(id:) attaches the ID correctly" passed after 0.001 seconds.
+􀟈 Test "cancellable preserves operation" started.
+􁁛 Test "cancellable preserves operation" passed after 0.001 seconds.
+􀟈 Test "cancellable preserves error handler" started.
+􁁛 Test "cancellable preserves error handler" passed after 0.001 seconds.
+􀟈 Test "cancellable can be called on empty work" started.
+􁁛 Test "cancellable can be called on empty work" passed after 0.001 seconds.
+􀟈 Test "cancellable can be called on fireAndForget work" started.
+􁁛 Test "cancellable can be called on fireAndForget work" passed after 0.001 seconds.
+􀟈 Test "cancellable ID can be overwritten" started.
+􁁛 Test "cancellable ID can be overwritten" passed after 0.001 seconds.
+􀟈 Test "cancellable with empty string ID" started.
+􁁛 Test "cancellable with empty string ID" passed after 0.001 seconds.
+􁁛 Suite "Work Cancellable" passed after 0.001 seconds.
+􀟈 Suite "Work Failure Type" started.
+􀟈 Test "Failure error message is correct" started.
+􁁛 Test "Failure error message is correct" passed after 0.001 seconds.
+􀟈 Test "Failure with empty message" started.
+􁁛 Test "Failure with empty message" passed after 0.001 seconds.
+􀟈 Test "Failure conforms to Error" started.
+􁁛 Test "Failure conforms to Error" passed after 0.001 seconds.
+􀟈 Test "Failure conforms to CustomStringConvertible" started.
+􁁛 Test "Failure conforms to CustomStringConvertible" passed after 0.001 seconds.
+􀟈 Test "Different Failure messages are distinguishable" started.
+􁁛 Test "Different Failure messages are distinguishable" passed after 0.001 seconds.
+􁁛 Suite "Work Failure Type" passed after 0.001 seconds.
+􀟈 Suite "Work Integration" started.
+􀟈 Test "map and cancellable can be combined" started.
+􁁛 Test "map and cancellable can be combined" passed after 0.001 seconds.
+􀟈 Test "flatMap and catch can be combined" started.
+􁁛 Test "flatMap and catch can be combined" passed after 0.001 seconds.
+􀟈 Test "multiple transformations chain correctly" started.
+􁁛 Test "multiple transformations chain correctly" passed after 0.001 seconds.
+􀟈 Test "work with throwing body" started.
+􁁛 Test "work with throwing body" passed after 0.001 seconds.
+􁁛 Suite "Work Integration" passed after 0.008 seconds.
+􀟈 Suite "Worker run() with different operation types" started.
+􀟈 Test "run with .none operation returns nil" started.
+􁁛 Test "run with .none operation returns nil" passed after 0.001 seconds.
+􀟈 Test "run with .cancellation operation cancels task and returns nil" started.
+􁁛 Test "run with .cancellation operation cancels task and returns nil" passed after 0.010 seconds.
+􀟈 Test "run with .fireAndForget executes operation and returns nil immediately" started.
+2025-12-25 21:06:24.200970-0800 xctest[87543:2636337] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "run with .fireAndForget executes operation and returns nil immediately" passed after 0.103 seconds.
+􀟈 Test "run with .task executes and returns resulting action" started.
+􁁛 Test "run with .task executes and returns resulting action" passed after 0.001 seconds.
+􀟈 Test "run with .task uses environment correctly" started.
+􁁛 Test "run with .task uses environment correctly" passed after 0.001 seconds.
+􁁛 Suite "Worker run() with different operation types" passed after 0.114 seconds.
+􀟈 Suite "Worker error handling" started.
+􀟈 Test "task that throws without error handler returns nil" started.
+2025-12-25 21:06:24.303373-0800 xctest[87543:2636342] [Worker<TestAction, TestEnvironment>] Received Error: Something went wrong
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "task that throws without error handler returns nil" passed after 0.001 seconds.
+􀟈 Test "task that throws with .catch handler returns action from handler" started.
+􁁛 Test "task that throws with .catch handler returns action from handler" passed after 0.001 seconds.
+􀟈 Test "successful task with .catch handler returns normal result" started.
+􁁛 Test "successful task with .catch handler returns normal result" passed after 0.001 seconds.
+􀟈 Test "error handler receives the thrown error" started.
+􁁛 Test "error handler receives the thrown error" passed after 0.001 seconds.
+􀟈 Test "fireAndForget that throws logs error but continues" started.
+􁁛 Test "fireAndForget that throws logs error but continues" passed after 0.055 seconds.
+􁁛 Suite "Worker error handling" passed after 0.055 seconds.
+􀟈 Suite "Worker cancellation" started.
+􀟈 Test "cancel(taskID:) cancels a specific running task" started.
+2025-12-25 21:06:24.371776-0800 xctest[87543:2636338] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "cancel(taskID:) cancels a specific running task" passed after 0.066 seconds.
+􀟈 Test "cancel(taskID:) with non-existent ID does nothing" started.
+􁁛 Test "cancel(taskID:) with non-existent ID does nothing" passed after 0.001 seconds.
+􀟈 Test "cancelAll() cancels all tracked tasks" started.
+2025-12-25 21:06:24.438351-0800 xctest[87543:2636338] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+2025-12-25 21:06:24.438392-0800 xctest[87543:2636338] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+Resolve Package Graph
+
+􁁛 Test "cancelAll() cancels all tracked tasks" passed after 0.067 seconds.
+􀟈 Test "cancelled task responds to cancellation" started.
+2025-12-25 21:06:24.552452-0800 xctest[87543:2636339] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "cancelled task responds to cancellation" passed after 0.112 seconds.
+􁁛 Suite "Worker cancellation" passed after 0.246 seconds.
+􀟈 Suite "Worker duplicate cancellation ID handling" started.
+􀟈 Test "work with same cancellation ID is dropped when already running" started.
+2025-12-25 21:06:24.618553-0800 xctest[87543:2636338] [Worker<TestAction, TestEnvironment>] Duplicate cancellationID for Work is received.
+A work with the same cancellation ID: shared-id is already running
+The oldest is prioritized and the newest will be ignored.
+
+Please cancel the ongoing task if this priority does not suit your flow
+􁁛 Test "work with same cancellation ID is dropped when already running" passed after 0.012 seconds.
+􀟈 Test "existing task continues running when duplicate is dropped" started.
+2025-12-25 21:06:24.631307-0800 xctest[87543:2636338] [Worker<TestAction, TestEnvironment>] Duplicate cancellationID for Work is received.
+A work with the same cancellation ID: shared-id is already running
+The oldest is prioritized and the newest will be ignored.
+
+Please cancel the ongoing task if this priority does not suit your flow
+􁁛 Test "existing task continues running when duplicate is dropped" passed after 0.106 seconds.
+􀟈 Test "same ID can be reused after task completes" started.
+􁁛 Test "same ID can be reused after task completes" passed after 0.001 seconds.
+􀟈 Test "same ID can be reused after task is cancelled" started.
+2025-12-25 21:06:24.738652-0800 xctest[87543:2636342] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "same ID can be reused after task is cancelled" passed after 0.067 seconds.
+􁁛 Suite "Worker duplicate cancellation ID handling" passed after 0.187 seconds.
+􀟈 Suite "Worker task lifecycle" started.
+􀟈 Test "task is tracked while running" started.
+􁁛 Test "task is tracked while running" passed after 0.011 seconds.
+􀟈 Test "task is removed from tracking after completion" started.
+􁁛 Test "task is removed from tracking after completion" passed after 0.001 seconds.
+􀟈 Test "task is removed from tracking after error" started.
+2025-12-25 21:06:24.806004-0800 xctest[87543:2636342] [Worker<TestAction, TestEnvironment>] Received Error: Task error
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "task is removed from tracking after error" passed after 0.001 seconds.
+􀟈 Test "task without cancellation ID is not tracked" started.
+􁁛 Test "task without cancellation ID is not tracked" passed after 0.011 seconds.
+􀟈 Test "multiple tasks can be tracked simultaneously" started.
+􁁛 Test "multiple tasks can be tracked simultaneously" passed after 0.014 seconds.
+􁁛 Suite "Worker task lifecycle" passed after 0.038 seconds.
+􀟈 Suite "Worker task priority" started.
+􀟈 Test "task respects specified priority" started.
+􁁛 Test "task respects specified priority" passed after 0.001 seconds.
+􀟈 Test "fireAndForget respects specified priority" started.
+􁁛 Test "fireAndForget respects specified priority" passed after 0.012 seconds.
+􁁛 Suite "Worker task priority" passed after 0.013 seconds.
+􀟈 Suite "Worker edge cases" started.
+􀟈 Test "empty cancellation ID works correctly" started.
+􁁛 Test "empty cancellation ID works correctly" passed after 0.001 seconds.
+􀟈 Test "cancelling with empty ID works" started.
+2025-12-25 21:06:24.860174-0800 xctest[87543:2636337] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "cancelling with empty ID works" passed after 0.066 seconds.
+􀟈 Test "running many concurrent tasks works correctly" started.
+􁁛 Test "running many concurrent tasks works correctly" passed after 0.001 seconds.
+􀟈 Test "task completing with error still cleans up properly" started.
+2025-12-25 21:06:24.914439-0800 xctest[87543:2636342] [Worker<TestAction, TestEnvironment>] Received Error: Cleanup test error
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "task completing with error still cleans up properly" passed after 0.001 seconds.
+􀟈 Test "CancellationError in task returns nil" started.
+2025-12-25 21:06:24.914631-0800 xctest[87543:2636342] [Worker<TestAction, TestEnvironment>] Received Error: The operation couldn’t be completed. (Swift.CancellationError error 1.)
+At: 12/25/2025, 9:06 PM
+
+Work was not given a callback for error cases.
+Therefore no action will be emitted at this point.
+Use .catch { } to convert this error to an action
+􁁛 Test "CancellationError in task returns nil" passed after 0.001 seconds.
+􀟈 Test "CancellationError with catch handler calls handler" started.
+􁁛 Test "CancellationError with catch handler calls handler" passed after 0.001 seconds.
+􁁛 Suite "Worker edge cases" passed after 0.068 seconds.
+􀟈 Suite "WritableProjectionTests" started.
+􀟈 Test writableProjection() started.
+􁁛 Test writableProjection() passed after 0.001 seconds.
+􀟈 Test projectionWithNested() started.
+􁁛 Test projectionWithNested() passed after 0.001 seconds.
+􁁛 Suite "WritableProjectionTests" passed after 0.001 seconds.
+􀟈 Suite SupervisorDynamicMemberLookupTests started.
+􀟈 Test accessProperties() started.
+􁁛 Test accessProperties() passed after 0.001 seconds.
+􁁛 Suite SupervisorDynamicMemberLookupTests passed after 0.001 seconds.
+􁁛 Test run with 107 tests in 19 suites passed after 5.383 seconds.
+2025-12-25 21:06:25.202 xcodebuild[87539:2636284] [MT] IDETestOperationsObserverDebug: 6.078 elapsed -- Testing started completed.
+2025-12-25 21:06:25.202 xcodebuild[87539:2636284] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2025-12-25 21:06:25.202 xcodebuild[87539:2636284] [MT] IDETestOperationsObserverDebug: 6.078 sec, +6.078 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/john/Documents/dev/Supervision/.nvim/xcodebuild/test.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started
+

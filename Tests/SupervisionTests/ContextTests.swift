@@ -32,16 +32,14 @@ struct ContextTests {
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer),
-                enableBatchingFn: {  },
-                flushBatchFn: {  }
+                statePointer: UnsafeMutablePointer(pointer)
             )
             
-            #expect(context.currentState == 0)
+            #expect(context.state == 0)
             
-            context.mutate(\.self, to: 5)
+            context.modify(\.self, to: 5)
             
-            #expect(context.currentState == 5)
+            #expect(context.state == 5)
         }
     }
     
@@ -54,18 +52,16 @@ struct ContextTests {
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer),
-                enableBatchingFn: {  },
-                flushBatchFn: {  }
+                statePointer: UnsafeMutablePointer(pointer)
             )
             
-            #expect(context.currentState == 0)
+            #expect(context.state == 0)
             
-            context.transform(\.self) { _ in
-                return 5
+            context.modify(\.self) {
+                $0 = 5
             }
             
-            #expect(context.currentState == 5)
+            #expect(context.state == 5)
         }
     }
     
@@ -78,15 +74,13 @@ struct ContextTests {
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer),
-                enableBatchingFn: {  },
-                flushBatchFn: {  }
+                statePointer: UnsafeMutablePointer(pointer)
             )
             
             #expect(context.age == 0)
             
-            context.transform(\.age) { _ in
-                return 18
+            context.modify(\.age) {
+                $0 = 18
             }
             
             #expect(context.age == 18)
@@ -102,12 +96,10 @@ struct ContextTests {
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer),
-                enableBatchingFn: {  },
-                flushBatchFn: {  }
+                statePointer: UnsafeMutablePointer(pointer)
             )
 
-            context.batch {
+            context.modify {
                 $0.age.wrappedValue = 30
                 $0.name.wrappedValue = "John"
                 $0.lastName.wrappedValue = "Demirci"
@@ -128,12 +120,10 @@ struct ContextTests {
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer),
-                enableBatchingFn: {  },
-                flushBatchFn: {  }
+                statePointer: UnsafeMutablePointer(pointer)
             )
 
-            context.batch {
+            context.modify {
                 $0.age.wrappedValue = 30
                 $0.name.wrappedValue = "John"
                 $0.lastName.wrappedValue = "Demirci"
