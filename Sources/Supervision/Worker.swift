@@ -10,25 +10,25 @@ import OSLog
 actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     var tasks: [String: Task<Action?, Never>]
     private let logger = Logger(subsystem: "Supervision", category: "Worker<\(Action.self), \(Environment.self)>")
-    
+
     init() {
-        self.tasks = [:]
+        tasks = [:]
     }
-    
+
     isolated deinit {
         cancelAll()
     }
-    
+
     func cancel(taskID: String) {
         tasks[taskID]?.cancel()
         tasks[taskID] = nil
     }
-    
+
     func cancelAll() {
         tasks.values.forEach { $0.cancel() }
         tasks.removeAll()
     }
-    
+
     // runs the work
     // if a work is running with the same ID, then the work that is running is prioritized and the newest run call is dismissed
     func run(
@@ -38,12 +38,12 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
         switch work.operation {
         case .none:
             return nil
-            
-        case .cancellation(let id):
+
+        case let .cancellation(id):
             cancel(taskID: id)
             return nil
-            
-        case .fireAndForget(let priority, let operation):
+
+        case let .fireAndForget(priority, operation):
             Task(priority: priority) {
                 do {
                     try await operation(environment)
@@ -53,7 +53,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
             }
             return nil
 
-        case .task(let priority, let operationWork):
+        case let .task(priority, operationWork):
             let errorHandler = work.onError
             let cancellationID = work.cancellationID
 
@@ -66,34 +66,34 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
                         logger.error("""
                         Received Error: \(error.localizedDescription)
                         At: \(Date.now.formatted())
-                        
+
                         Work was not given a callback for error cases.
-                        Therefore no action will be emited at this point.
-                        Use .onError function to provide a solution for error cases
+                        Therefore no action will be emitted at this point.
+                        Use .catch { } to convert this error to an action
                         """)
                         return nil
                     }
-                    
+
                     return onError(error)
                 }
             }
-            
+
             if let cancellationID = cancellationID {
-                guard self.tasks[cancellationID] == nil else {
+                guard tasks[cancellationID] == nil else {
                     logger.info("""
                     Duplicate cancellationID for Work is received.
                     A work with the same cancellation ID: \(cancellationID) is already running
                     The oldest is prioritized and the newest will be ignored.
-                    
+
                     Please cancel the ongoing task if this priority does not suit your flow 
                     """)
                     return nil
                 }
-                
-                self.tasks[cancellationID] = task
-                
+
+                tasks[cancellationID] = task
+
                 let result = await perform(task: tasks[cancellationID])
-                
+
                 defer { self.tasks.removeValue(forKey: cancellationID) }
 
                 return result
@@ -102,12 +102,12 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
             }
         }
     }
-    
+
     @concurrent
     private func perform(task: Task<Action?, Never>?) async -> Action? {
         return await task?.value
     }
-    
+
     @concurrent
     private func perform(task: Task<Action?, Never>) async -> Action? {
         return await task.value
