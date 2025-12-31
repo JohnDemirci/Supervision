@@ -5,7 +5,6 @@
 //  Created by John on 11/28/25.
 //
 
-import Combine
 import Foundation
 import OSLog
 
@@ -318,7 +317,7 @@ public final class Supervisor<Feature: FeatureProtocol> {
             return
         case let .cancellation(id):
             Task { await self.worker.cancel(taskID: id) }
-        case .task, .fireAndForget:
+        case .task, .fireAndForget, .subscribe:
             actionContinuation.yield(work)
         }
     }
@@ -425,6 +424,21 @@ extension Supervisor {
 
             if let resultAction {
                 self.send(resultAction)
+            }
+            
+        case .subscribe:
+            // Start a detached task that iterates through the async sequence,
+            // emitting each value as an action back to the supervisor
+            Task { [weak self] in
+                guard let self else { return }
+
+                await self.worker.runSubscription(
+                    work,
+                    using: self.dependency,
+                    onAction: { [weak self] action in
+                        self?.send(action)
+                    }
+                )
             }
         }
     }

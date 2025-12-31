@@ -167,6 +167,98 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
             } else {
                 return await perform(task: task)
             }
+            
+        case .subscribe:
+            // Subscriptions are handled by runSubscription() which emits multiple values
+            // This case should not be reached when using the proper API
+            logger.warning("Subscribe work should use runSubscription() instead of run()")
+            return nil
+        }
+    }
+
+    /// Executes a subscription work unit, emitting each value through the provided handler.
+    ///
+    /// Unlike `run()`, which returns a single action, subscriptions emit multiple actions
+    /// over time. Each value from the async sequence is passed to the `onAction` handler.
+    ///
+    /// - Parameters:
+    ///   - work: The subscription work unit to execute.
+    ///   - environment: The environment/dependencies for the work.
+    ///   - onAction: A handler called for each action emitted by the subscription.
+    ///
+    /// The subscription runs until:
+    /// - The async sequence completes naturally
+    /// - The task is cancelled via `cancel(taskID:)`
+    /// - An error occurs (handled via `.catch` or logged)
+    func runSubscription(
+        _ work: Work<Action, Environment>,
+        using environment: Environment,
+        onAction: @MainActor @Sendable @escaping (Action) -> Void
+    ) async {
+        guard case let .subscribe(sequence) = work.operation else {
+            logger.warning("runSubscription called with non-subscribe work. Ignoring.")
+            return
+        }
+
+        guard let cancellationID = work.cancellationID else {
+            logger.warning("Subscribe work requires a cancellationID. Ignoring.")
+            return
+        }
+
+        guard tasks[cancellationID] == nil else {
+            logger.info("""
+            Duplicate cancellationID for Subscribe Work received.
+            A work with the same cancellation ID: \(cancellationID) is already running.
+            The oldest is prioritized and the newest will be ignored.
+
+            Please cancel the ongoing task if this priority does not suit your flow.
+            """)
+            return
+        }
+
+        let errorHandler = work.onError
+
+        let task = Task<Action?, Never> {
+            do {
+                let stream = try await sequence(environment)
+
+                for try await value in stream {
+                    if Task.isCancelled { break }
+
+                    await onAction(value)
+                }
+
+                return nil
+            } catch is CancellationError {
+                return nil
+            } catch {
+                guard let onError = errorHandler else {
+                    self.logger.error("""
+                    Subscribe work threw error: \(error.localizedDescription)
+                    At: \(Date.now.formatted())
+
+                    Work was not given a callback for error cases.
+                    Therefore no action will be emitted at this point.
+                    Use .catch { } to convert this error to an action.
+                    """)
+                    return nil
+                }
+
+                return onError(error)
+            }
+        }
+
+        tasks[cancellationID] = task
+
+        // Await the task completion (handles errors and cleanup)
+        let finalAction = await perform(task: task)
+
+        // Clean up the task from tracking
+        tasks.removeValue(forKey: cancellationID)
+
+        // If there's a final action (from error handler), emit it
+        if let finalAction {
+            await onAction(finalAction)
         }
     }
 

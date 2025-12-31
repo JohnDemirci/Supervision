@@ -40,7 +40,7 @@ struct WorkFactoryTests {
         case .none:
             // Success - this is the expected case
             break
-        case .cancellation, .fireAndForget, .task:
+        case .cancellation, .fireAndForget, .task, .subscribe:
             Issue.record("Expected .none operation but got different type")
         }
 
@@ -56,7 +56,7 @@ struct WorkFactoryTests {
         switch work.operation {
         case .cancellation(let id):
             #expect(id == cancellationID)
-        case .none, .fireAndForget, .task:
+        case .none, .fireAndForget, .task, .subscribe:
             Issue.record("Expected .cancellation operation but got different type")
         }
 
@@ -72,7 +72,7 @@ struct WorkFactoryTests {
         switch work.operation {
         case .cancellation(let id):
             #expect(id == "")
-        case .none, .fireAndForget, .task:
+        case .none, .fireAndForget, .task, .subscribe:
             Issue.record("Expected .cancellation operation")
         }
     }
@@ -90,7 +90,7 @@ struct WorkFactoryTests {
             // Execute the body to verify it works
             try await body(TestEnvironment())
             #expect(executedBox.value == true)
-        case .none, .cancellation, .task:
+        case .none, .cancellation, .task, .subscribe:
             Issue.record("Expected .fireAndForget operation but got different type")
         }
 
@@ -105,7 +105,7 @@ struct WorkFactoryTests {
         switch work.operation {
         case .fireAndForget(let priority, _):
             #expect(priority == .high)
-        case .none, .cancellation, .task:
+        case .none, .cancellation, .task, .subscribe:
             Issue.record("Expected .fireAndForget operation")
         }
     }
@@ -137,7 +137,7 @@ struct WorkFactoryTests {
             #expect(priority == nil)
             let result = try await body(TestEnvironment(value: 99))
             #expect(result == .loaded(99))
-        case .none, .cancellation, .fireAndForget:
+        case .none, .cancellation, .fireAndForget, .subscribe:
             Issue.record("Expected .task operation but got different type")
         }
 
@@ -154,7 +154,7 @@ struct WorkFactoryTests {
         switch work.operation {
         case .task(let priority, _):
             #expect(priority == .low)
-        case .none, .cancellation, .fireAndForget:
+        case .none, .cancellation, .fireAndForget, .subscribe:
             Issue.record("Expected .task operation")
         }
     }
