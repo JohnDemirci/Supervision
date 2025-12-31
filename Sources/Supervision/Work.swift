@@ -113,6 +113,9 @@ public struct Work<Output, Environment>: Sendable {
             TaskPriority?,
             @Sendable (Environment) async throws -> Output
         )
+        case subscribe(
+            @Sendable (Environment) async throws -> AsyncThrowingStream<Output, Error>
+        )
     }
 
     let cancellationID: String?
@@ -262,6 +265,69 @@ public extension Work {
     ) -> Work<Output, Environment> {
         Work<Output, Environment>(operation: .task(priority, body))
     }
+
+    /// Creates work that subscribes to an async sequence and emits actions over time.
+    ///
+    /// Use this to create long-running subscriptions to streams of data like:
+    /// - WebSocket connections
+    /// - Database change notifications
+    /// - Timer events
+    /// - Sensor data streams
+    ///
+    /// ## Example: Timer Subscription
+    ///
+    /// ```swift
+    /// case .startTimer:
+    ///     return .subscribe(cancellationID: "timer") { env in
+    ///         AsyncStream { continuation in
+    ///             Task {
+    ///                 while !Task.isCancelled {
+    ///                     try await Task.sleep(for: .seconds(1))
+    ///                     continuation.yield(.tick)
+    ///                 }
+    ///                 continuation.finish()
+    ///             }
+    ///         }
+    ///     }
+    /// ```
+    ///
+    /// ## Example: NotificationCenter as AsyncSequence
+    ///
+    /// ```swift
+    /// case .observeKeyboardChanges:
+    ///     return .subscribe(cancellationID: "keyboard") { env in
+    ///         NotificationCenter.default
+    ///             .notifications(named: UIResponder.keyboardWillShowNotification)
+    ///             .map { notification in
+    ///                 .keyboardWillShow(notification)
+    ///             }
+    ///     }
+    /// ```
+    ///
+    /// - Important: Subscribe work **requires** a `cancellationID`. Without one,
+    ///   the subscription will be ignored and a warning logged.
+    ///
+    /// - Note: The subscription runs until:
+    ///   - The sequence finishes naturally
+    ///   - The task is cancelled via `.cancel(cancellationID)`
+    ///   - The worker/supervisor is deallocated
+    ///
+    /// - Parameters:
+    ///   - cancellationID: Required identifier for cancelling the subscription
+    ///   - body: A closure that creates an async sequence from the environment
+    /// - Returns: A work unit that subscribes to the async sequence
+    static func subscribe(
+        cancellationID: String,
+        _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Output, Error>
+    ) -> Work<Output, Environment> {
+        Work<Output, Environment>.init(
+            cancellationID: cancellationID,
+            operation: .subscribe({ env in
+                try await body(env)
+            }),
+            onError: nil
+        )
+    }
 }
 
 // MARK: - Transformations
@@ -285,7 +351,7 @@ public extension Work {
     /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
     func map<NewOutput>(
         _ transform: @Sendable @escaping (Output) -> NewOutput
-    ) throws(Failure) -> Work<NewOutput, Environment> {
+    ) throws(Failure) -> Work<NewOutput, Environment> where Output: Sendable, NewOutput: Sendable {
         switch operation {
         case .none:
             throw Failure.message("Attempting to map a non-task work unit")
@@ -303,6 +369,27 @@ public extension Work {
                     let output = try await work(env)
                     return transform(output)
                 },
+                onError: nil
+            )
+            
+        case let .subscribe(sequence):
+            return Work<NewOutput, Environment>.init(
+                cancellationID: self.cancellationID,
+                operation: .subscribe({ env in
+                    let originalStream = try await sequence(env)
+                    return AsyncThrowingStream<NewOutput, Error> { continuation in
+                        Task {
+                            do {
+                                for try await element in originalStream {
+                                    continuation.yield(transform(element))
+                                }
+                                continuation.finish()
+                            } catch {
+                                continuation.finish(throwing: error)
+                            }
+                        }
+                    }
+                }),
                 onError: nil
             )
         }
@@ -371,6 +458,9 @@ public extension Work {
 
         case .fireAndForget:
             throw Failure.message("Attempting to flatMap a fireAndForget work unit")
+            
+        case .subscribe:
+            throw Failure.message("Attempting to flat map a subscribe work unit")
 
         case let .task(priority, work):
             return Work<NewOutput, Environment>(
@@ -378,7 +468,7 @@ public extension Work {
                     let newWork = try await transform(work(env))
 
                     switch newWork.operation {
-                    case .none, .cancellation, .fireAndForget:
+                    case .none, .cancellation, .fireAndForget, .subscribe:
                         preconditionFailure("Cannot flatMap into a non-task work unit")
                     case let .task(_, action):
                         return try await action(env)
