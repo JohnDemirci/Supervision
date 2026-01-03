@@ -161,6 +161,13 @@ public final class Supervisor<Feature: FeatureProtocol> {
     /// The feature instance that processes actions.
     let feature: Feature
 
+    // MARK: - State Storage with Manual Observation Control
+
+    /// Internal storage for state - observation is manually controlled.
+    /// This prevents spurious observation triggers from `&state` access.
+    @ObservationIgnored
+    private var _stateStorage: State
+
     /// The current state of the feature.
     ///
     /// State is `@Observable`, so SwiftUI views automatically update when it changes.
@@ -172,7 +179,17 @@ public final class Supervisor<Feature: FeatureProtocol> {
     ///
     /// - Important: State should be a value type (struct or enum). Using reference
     ///   types will trigger a runtime warning.
-    public internal(set) var state: State
+    public internal(set) var state: State {
+        get {
+            access(keyPath: \.state)
+            return _stateStorage
+        }
+        set {
+            withMutation(keyPath: \.state) {
+                _stateStorage = newValue
+            }
+        }
+    }
 
     // MARK: - Initialization
 
@@ -198,7 +215,7 @@ public final class Supervisor<Feature: FeatureProtocol> {
             )
         }
 
-        self.state = state
+        self._stateStorage = state
         self.dependency = dependency
         self.worker = .init()
         self.feature = Feature()
@@ -238,7 +255,8 @@ public final class Supervisor<Feature: FeatureProtocol> {
     /// - Parameter keyPath: A key path to a property on the state.
     /// - Returns: The value at the specified key path.
     public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
-        state[keyPath: keyPath]
+        access(keyPath: \.state)
+        return _stateStorage[keyPath: keyPath]
     }
 
     /// Dispatches an action to the feature for processing.
@@ -296,20 +314,29 @@ public final class Supervisor<Feature: FeatureProtocol> {
     ///
     /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
-        let work = withUnsafeMutablePointer(to: &state) { pointer in
-            // Pointer valid within the scope
-            // Context is ~Copyable and never escapes
-            // Everything in here is synchronous.
+        var didMutate = false
+
+        // Process the action without triggering observation.
+        // We access _stateStorage directly - observation is deferred.
+        let work = withUnsafeMutablePointer(to: &_stateStorage) { pointer in
             let context = Context<Feature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    didMutate = true
                 },
-                statePointer: UnsafeMutablePointer(pointer)
+                statePointer: UnsafeMutablePointer(pointer),
+                onMutate: { didMutate = true }
             )
-            // context is passed as a borrowing
             return feature.process(action: action, context: context)
+        }
 
-            // work is returned it has no reference to context or the pointer
+        // Only trigger observation if state was actually mutated.
+        // This is the key optimization - we notify SwiftUI only when necessary.
+        if didMutate {
+            withMutation(keyPath: \.state) {
+                // State is already mutated in _stateStorage via the pointer.
+                // This block just triggers the observation notification.
+            }
         }
 
         switch work.operation {

@@ -100,13 +100,18 @@ public struct Context<State>: ~Copyable {
     @usableFromInline
     internal let statePointer: UnsafeMutablePointer<State>
 
+    @usableFromInline
+    internal let onMutate: () -> Void
+
     @inlinable
     internal init(
         mutateFn: @escaping (AnyMutation<State>) -> Void,
-        statePointer: UnsafeMutablePointer<State>
+        statePointer: UnsafeMutablePointer<State>,
+        onMutate: @escaping () -> Void = {}
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
+        self.onMutate = onMutate
     }
 
     // MARK: - Zero-Copy Reads
@@ -150,7 +155,13 @@ public struct Context<State>: ~Copyable {
     /// ```
     @inlinable
     public var state: State {
-        statePointer.pointee
+        get {
+            statePointer.pointee
+        }
+        nonmutating set {
+            onMutate()
+            statePointer.pointee = newValue
+        }
     }
 
     // MARK: - Mutations
@@ -167,6 +178,7 @@ public struct Context<State>: ~Copyable {
     ///   - newValue: The new value to set.
     @inlinable
     public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+        onMutate()
         mutateFn(.init(keyPath, newValue))
     }
 
@@ -195,6 +207,7 @@ public struct Context<State>: ~Copyable {
         _ keyPath: WritableKeyPath<State, Value>,
         _ modify: (inout Value) -> Void
     ) {
+        onMutate()
         modify(&statePointer.pointee[keyPath: keyPath])
     }
 
@@ -219,9 +232,14 @@ public struct Context<State>: ~Copyable {
     ///   there is no transactional rollback.
     @inline(never)
     public func modify(_ build: (borrowing BatchBuilder<State>) -> Void) {
+        let onMutate = self.onMutate
+        let mutateFn = self.mutateFn
         build(
             BatchBuilder<State>(
-                mutateFn: mutateFn,
+                mutateFn: { mutation in
+                    onMutate()
+                    mutateFn(mutation)
+                },
                 statePointer: statePointer
             )
         )
