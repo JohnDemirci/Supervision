@@ -328,6 +328,33 @@ public extension Work {
             onError: nil
         )
     }
+    
+    static func subscribe<Value>(
+        cancellationID: String? = nil,
+        _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Value, Error>,
+        toAction: @Sendable @escaping (Result<Value, Error>) -> Output
+    ) -> Work<Output, Environment> where Output: Sendable, Value: Sendable {
+        Work<Output, Environment>.init(
+            cancellationID: cancellationID,
+            operation: .subscribe({ env in
+                let currentStream = try await body(env)
+                return AsyncThrowingStream { continuation in
+                    Task {
+                        do {
+                            for try await value in currentStream {
+                                continuation.yield(toAction(.success(value)))
+                            }
+                            continuation.finish()
+                        } catch {
+                            continuation.yield(toAction(.failure(error)))
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
+            }),
+            onError: nil
+        )
+    }
 }
 
 // MARK: - Transformations
@@ -351,16 +378,16 @@ public extension Work {
     /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
     func map<NewOutput>(
         _ transform: @Sendable @escaping (Output) -> NewOutput
-    ) throws(Failure) -> Work<NewOutput, Environment> where Output: Sendable, NewOutput: Sendable {
+    ) -> Work<NewOutput, Environment> where Output: Sendable, NewOutput: Sendable {
         switch operation {
         case .none:
-            throw Failure.message("Attempting to map a non-task work unit")
+            preconditionFailure("Attempting to map a non-task work unit")
 
         case .cancellation:
-            throw Failure.message("Attempting to map a cancellation work unit")
+            preconditionFailure("Attempting to map a cancellation work unit")
 
         case .fireAndForget:
-            throw Failure.message("Attempting to map a fire-and-forget work unit")
+            preconditionFailure("Attempting to map a fire-and-forget work unit")
 
         case let .task(priority, work):
             return Work<NewOutput, Environment>(
