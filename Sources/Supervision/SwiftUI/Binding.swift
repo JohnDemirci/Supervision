@@ -117,17 +117,17 @@ extension Supervisor {
     /// 3. No animation (immediate update)
     ///
     /// ## Benefits
-    /// - ✅ **Maintains unidirectional data flow**: All changes go through feature's process() method
-    /// - ✅ **Preserves animations**: Gesture and modifier animations work correctly
-    /// - ✅ **Enables validation**: Add validation logic in action handlers
-    /// - ✅ **Supports side effects**: Trigger API calls, logging, analytics on state changes
-    /// - ✅ **Fully testable**: Test actions without SwiftUI dependencies
-    /// - ✅ **Debuggable**: Log all actions to trace state changes
-    /// - ✅ **Type-safe**: Compiler ensures actions match value types
+    /// - Maintains unidirectional data flow: All changes go through feature's process() method
+    /// - Preserves animations: Gesture and modifier animations work correctly
+    /// - Enables validation: Add validation logic in action handlers
+    /// - Supports side effects: Trigger API calls, logging, analytics on state changes
+    /// - Fully testable: Test actions without SwiftUI dependencies
+    /// - Debuggable: Log all actions to trace state changes
+    /// - Type-safe: Compiler ensures actions match value types
     ///
     /// ## Trade-offs
-    /// - ⚠️ **Binding identity**: Binding is recreated on every view update (not cached)
-    /// - ⚠️ **Verbosity**: Requires defining an action for each bindable property
+    /// - Binding identity: Binding is recreated on every view update (not cached)
+    /// - Verbosity: Requires defining an action for each bindable property
     ///
     /// ## Animation Performance
     ///
@@ -136,9 +136,9 @@ extension Supervisor {
     ///
     /// ## Performance
     /// - **Getter**: Zero-copy read from state via KeyPath, O(1)
-    /// - **Setter**: Routes through send() → process() → context.modify()
+    /// - **Setter**: Routes through send() -> process() -> context.modify()
     /// - **Animation**: Applied via `withAnimation()` or `withTransaction()`
-    /// - **@Observable**: Ensures SwiftUI updates efficiently when state changes
+    /// - **Granular Observation**: Only views observing this keyPath are notified
     ///
     /// ## See Also
     /// - `directBinding(_:animation:)`: For cases where animation performance is critical
@@ -149,9 +149,8 @@ extension Supervisor {
     ) -> Binding<Value> {
         Binding(
             get: {
-                // Read current value from state
-                // @Observable ensures view updates when state changes
-                self.state[keyPath: keyPath]
+                // Read current value with granular observation tracking
+                self[dynamicMember: keyPath]
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -173,7 +172,7 @@ extension Supervisor {
 
     /// Creates a SwiftUI Binding that directly mutates state without going through actions
     ///
-    /// **⚠️ Use sparingly**: This bypasses the action system and directly mutates state.
+    /// **Use sparingly**: This bypasses the action system and directly mutates state.
     /// Only use when animation performance is critical or for purely presentational state.
     ///
     /// Supports SwiftUI transactions for smooth gesture-driven animations.
@@ -298,18 +297,18 @@ extension Supervisor {
     /// 3. No animation (immediate update)
     ///
     /// ## Benefits
-    /// - ✅ **Smooth animations**: Transaction-aware for gesture-driven controls
-    /// - ✅ **Stable identity**: Binding can be cached if needed
-    /// - ✅ **Simple**: No need to define actions for UI-only state
-    /// - ✅ **Performance**: Direct mutation is faster than action routing
-    /// - ✅ **Animation control**: Can specify default animation
+    /// - Smooth animations: Transaction-aware for gesture-driven controls
+    /// - Stable identity: Binding can be cached if needed
+    /// - Simple: No need to define actions for UI-only state
+    /// - Performance: Direct mutation is faster than action routing
+    /// - Animation control: Can specify default animation
     ///
     /// ## Trade-offs
-    /// - ⚠️ **Breaks unidirectional flow**: State changes don't go through feature logic
-    /// - ⚠️ **No validation**: Can't validate or transform values on change
-    /// - ⚠️ **No side effects**: Can't trigger API calls, logging, or other effects
-    /// - ⚠️ **Harder to test**: Direct mutations bypass testable action system
-    /// - ⚠️ **Less debuggable**: Changes aren't logged as actions
+    /// - Breaks unidirectional flow: State changes don't go through feature logic
+    /// - No validation: Can't validate or transform values on change
+    /// - No side effects: Can't trigger API calls, logging, or other effects
+    /// - Harder to test: Direct mutations bypass testable action system
+    /// - Less debuggable: Changes aren't logged as actions
     ///
     /// ## Hybrid Pattern
     ///
@@ -344,13 +343,13 @@ extension Supervisor {
     ///
     /// ## Performance
     /// - **Getter**: Zero-copy read from state via KeyPath, O(1)
-    /// - **Setter**: Direct mutation, bypasses action system, O(1)
+    /// - **Setter**: Direct mutation via applyDirectMutation, O(1)
     /// - **Animation**: Applied via `withAnimation()` or `withTransaction()`
-    /// - **@Observable**: Still triggers SwiftUI updates efficiently
+    /// - **Granular Observation**: Only views observing this keyPath are notified
     ///
     /// ## Important Notes
-    /// - Direct mutations still trigger `@Observable` notifications
-    /// - SwiftUI views will re-render when state changes
+    /// - Direct mutations still trigger granular observation notifications
+    /// - SwiftUI views observing this keyPath will re-render
     /// - Reentrancy protection does NOT apply to direct mutations
     /// - Use judiciously - maintain architecture where it matters
     /// - Consider hybrid pattern: direct binding + completion action
@@ -363,8 +362,8 @@ extension Supervisor {
     ) -> Binding<Value> {
         Binding(
             get: {
-                // Read current value from state
-                self.state[keyPath: keyPath]
+                // Read current value with granular observation tracking
+                self[dynamicMember: keyPath]
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -374,11 +373,48 @@ extension Supervisor {
                 if let animation = effectiveAnimation {
                     // Apply animation when mutating state
                     withAnimation(animation) {
-                        self.state[keyPath: keyPath] = newValue
+                        self.applyDirectMutation(keyPath: keyPath, value: newValue)
                     }
                 } else {
                     // No animation - immediate update
-                    self.state[keyPath: keyPath] = newValue
+                    self.applyDirectMutation(keyPath: keyPath, value: newValue)
+                }
+            }
+        )
+    }
+
+    /// Creates a SwiftUI Binding with Equatable optimization that directly mutates state.
+    ///
+    /// This overload adds an Equatable check: if the new value equals the current value,
+    /// no mutation occurs and SwiftUI observation is not triggered. This prevents
+    /// unnecessary view re-renders.
+    ///
+    /// - Parameters:
+    ///   - keyPath: WritableKeyPath to the Equatable state property to bind
+    ///   - animation: Optional default animation to use when transaction has none
+    /// - Returns: A transaction-aware Binding with Equatable-optimized writes
+    public func directBinding<Value: Equatable>(
+        _ keyPath: WritableKeyPath<State, Value>,
+        animation: Animation? = nil
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                // Read current value with granular observation tracking
+                self[dynamicMember: keyPath]
+            },
+            set: { newValue, transaction in
+                // Determine which animation to use
+                // Priority: transaction.animation > custom animation > none
+                let effectiveAnimation = transaction.animation ?? animation
+
+                if let animation = effectiveAnimation {
+                    // Apply animation when mutating state (with Equatable check)
+                    withAnimation(animation) {
+                        self.applyDirectMutation(keyPath: keyPath, value: newValue)
+                    }
+                } else {
+                    // No animation - immediate update (with Equatable check)
+                    self.applyDirectMutation(keyPath: keyPath, value: newValue)
                 }
             }
         )

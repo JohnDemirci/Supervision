@@ -6,7 +6,19 @@
 //
 
 import Foundation
+import Observation
 import OSLog
+
+/// A lightweight observable token for tracking changes to a specific keyPath.
+/// Each state property gets its own token, enabling truly granular observation.
+@Observable
+final class ObservationToken: @unchecked Sendable {
+    var version: Int = 0
+
+    func increment() {
+        version += 1
+    }
+}
 
 /// The central coordinator for a feature's state, actions, and side effects.
 ///
@@ -78,6 +90,31 @@ import OSLog
 /// supervisor.items      // Same as supervisor.state.items
 /// ```
 ///
+/// ## Granular Observation
+///
+/// Views only re-render when the specific properties they access change:
+///
+/// ```swift
+/// // This view only re-renders when `count` changes
+/// struct CounterView: View {
+///     let supervisor: Supervisor<MyFeature>
+///     var body: some View {
+///         Text("\(supervisor.count)")  // Tracks only \.count
+///     }
+/// }
+///
+/// // This view only re-renders when `name` changes
+/// struct NameView: View {
+///     let supervisor: Supervisor<MyFeature>
+///     var body: some View {
+///         Text(supervisor.name)  // Tracks only \.name
+///     }
+/// }
+///
+/// // Mutating count does NOT re-render NameView
+/// supervisor.send(.incrementCount)
+/// ```
+///
 /// ## Bindings
 ///
 /// Create SwiftUI bindings for two-way data flow:
@@ -127,16 +164,12 @@ import OSLog
 /// - **Async Work**: Work is queued and executed by the internal ``Worker``
 /// - **Deinitialization**: Cancels all pending work and stops processing
 @MainActor
-@Observable
 @dynamicMemberLookup
-public final class Supervisor<Feature: FeatureProtocol> {
-    /// The action type defined by the feature.
+public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
 
-    /// The dependency type required by the feature for side effects.
     public typealias Dependency = Feature.Dependency
 
-    /// The state type managed by this supervisor.
     public typealias State = Feature.State
 
     private nonisolated let logger: Logger
@@ -147,6 +180,8 @@ public final class Supervisor<Feature: FeatureProtocol> {
     private let worker: Worker<Action, Dependency>
 
     private var processingTask: Task<Void, Never>?
+
+    private var _observationTokens: [AnyKeyPath: ObservationToken] = [:]
 
     /// A unique identifier for this supervisor instance.
     ///
@@ -161,34 +196,18 @@ public final class Supervisor<Feature: FeatureProtocol> {
     /// The feature instance that processes actions.
     let feature: Feature
 
-    // MARK: - State Storage with Manual Observation Control
+    /// Internal storage for the state.
+    private var _state: State
 
-    /// Internal storage for state - observation is manually controlled.
-    /// This prevents spurious observation triggers from `&state` access.
-    @ObservationIgnored
-    private var _stateStorage: State
-
-    /// The current state of the feature.
+    /// The current state.
     ///
-    /// State is `@Observable`, so SwiftUI views automatically update when it changes.
-    /// Prefer accessing properties via dynamic member lookup:
+    /// For granular SwiftUI observation, access individual properties via dynamic member lookup
+    /// (e.g., `supervisor.count` instead of `supervisor.state.count`).
     ///
-    /// ```swift
-    /// supervisor.count  // Instead of supervisor.state.count
-    /// ```
-    ///
-    /// - Important: State should be a value type (struct or enum). Using reference
-    ///   types will trigger a runtime warning.
+    /// Direct access to `state` does not participate in granular observation tracking.
     public internal(set) var state: State {
-        get {
-            access(keyPath: \.state)
-            return _stateStorage
-        }
-        set {
-            withMutation(keyPath: \.state) {
-                _stateStorage = newValue
-            }
-        }
+        get { _state }
+        set { _state = newValue }
     }
 
     // MARK: - Initialization
@@ -204,18 +223,20 @@ public final class Supervisor<Feature: FeatureProtocol> {
             category: "Supervisor"
         )
 
+        #if DEBUG
         let mirror = Mirror(reflecting: state)
         if mirror.displayStyle != .struct, mirror.displayStyle != .enum {
             logger.error(
                 """
-                ⚠️ Warning: State should be a struct or enum (value type).
+                Warning: State should be a struct or enum (value type).
                 Using reference types (classes) can lead to unexpected behavior.
                 Current State type: \(type(of: state))
                 """
             )
         }
+        #endif
 
-        self._stateStorage = state
+        self._state = state
         self.dependency = dependency
         self.worker = .init()
         self.feature = Feature()
@@ -238,9 +259,44 @@ public final class Supervisor<Feature: FeatureProtocol> {
         processingTask = nil
     }
 
-    /// Provides direct access to state properties via dynamic member lookup.
+    // MARK: - Granular Observation Infrastructure
+
+    /// Gets or creates an observation token for a specific keyPath.
+    /// Each token is independently observable, enabling truly granular SwiftUI updates.
+    @inline(__always)
+    private func token(for keyPath: AnyKeyPath) -> ObservationToken {
+        if let existing = _observationTokens[keyPath] {
+            return existing
+        }
+        let newToken = ObservationToken()
+        _observationTokens[keyPath] = newToken
+        return newToken
+    }
+
+    /// Tracks read access to a specific keyPath.
+    /// Called when a view accesses a state property via dynamic member lookup.
+    /// Each keyPath has its own Observable token, so views only re-render when their specific property changes.
+    @inline(__always)
+    private func trackAccess<Value>(for keyPath: KeyPath<State, Value>) {
+        // Touch this keyPath's token - SwiftUI will observe only this token
+        _ = token(for: keyPath).version
+    }
+
+    /// Notifies observers that a specific keyPath was mutated.
+    /// Only views observing this specific keyPath will re-render.
+    @inline(__always)
+    private func notifyChange(for keyPath: AnyKeyPath) {
+        // Only increment the token for this specific keyPath
+        // Views observing other keyPaths will NOT be notified
+        if let existingToken = _observationTokens[keyPath] {
+            existingToken.increment()
+        }
+    }
+
+    /// Provides direct access to state properties via dynamic member lookup with granular observation.
     ///
-    /// This subscript allows you to access state properties directly on the supervisor:
+    /// This subscript allows you to access state properties directly on the supervisor
+    /// while only triggering observation for the specific keyPath accessed:
     ///
     /// ```swift
     /// // Instead of:
@@ -252,11 +308,17 @@ public final class Supervisor<Feature: FeatureProtocol> {
     /// let count = supervisor.items.count
     /// ```
     ///
+    /// ## Granular Observation
+    ///
+    /// When a SwiftUI view accesses `supervisor.count`, only changes to `count`
+    /// will trigger re-renders. Changes to other properties like `name` will not.
+    ///
     /// - Parameter keyPath: A key path to a property on the state.
     /// - Returns: The value at the specified key path.
     public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
-        access(keyPath: \.state)
-        return _stateStorage[keyPath: keyPath]
+        // Track observation for this specific keyPath
+        trackAccess(for: keyPath)
+        return _state[keyPath: keyPath]
     }
 
     /// Dispatches an action to the feature for processing.
@@ -288,7 +350,7 @@ public final class Supervisor<Feature: FeatureProtocol> {
     ///    - `.cancel(id)`: Cancels running work with that ID
     ///    - `.run { }`: Queued for async execution
     ///    - `.fireAndForget { }`: Executed without awaiting result
-    ///
+     ///
     /// ## State Updates
     ///
     /// State mutations in `process()` are applied **synchronously** before `send()` returns.
@@ -314,29 +376,25 @@ public final class Supervisor<Feature: FeatureProtocol> {
     ///
     /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
-        var didMutate = false
+        // Track which keyPaths are mutated for granular notification
+        var mutatedKeyPaths: Set<AnyKeyPath> = []
 
-        // Process the action without triggering observation.
-        // We access _stateStorage directly - observation is deferred.
-        let work = withUnsafeMutablePointer(to: &_stateStorage) { pointer in
+        let work = withUnsafeMutablePointer(to: &_state) { pointer in
             let context = Context<Feature.State>(
                 mutateFn: { mutation in
+                    // Apply mutation immediately so subsequent reads see the new value
                     mutation.apply(&pointer.pointee)
-                    didMutate = true
+                    // Track the keyPath for notification after process() completes
+                    mutatedKeyPaths.insert(mutation.keyPath)
                 },
-                statePointer: UnsafeMutablePointer(pointer),
-                onMutate: { didMutate = true }
+                statePointer: UnsafePointer(pointer)
             )
             return feature.process(action: action, context: context)
         }
 
-        // Only trigger observation if state was actually mutated.
-        // This is the key optimization - we notify SwiftUI only when necessary.
-        if didMutate {
-            withMutation(keyPath: \.state) {
-                // State is already mutated in _stateStorage via the pointer.
-                // This block just triggers the observation notification.
-            }
+        // Notify only the affected keyPaths - views observing other properties won't re-render
+        for keyPath in mutatedKeyPaths {
+            notifyChange(for: keyPath)
         }
 
         switch work.operation {
@@ -347,6 +405,25 @@ public final class Supervisor<Feature: FeatureProtocol> {
         case .task, .fireAndForget, .subscribe:
             actionContinuation.yield(work)
         }
+    }
+
+    /// Applies a mutation directly to the state for a specific keyPath.
+    /// Used internally by `directBinding` for direct state mutations.
+    func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
+        _state[keyPath: keyPath] = value
+        notifyChange(for: keyPath)
+    }
+
+    /// Applies a mutation directly with Equatable check.
+    /// Returns true if the mutation was applied (value changed), false otherwise.
+    @discardableResult
+    func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
+        let currentValue = _state[keyPath: keyPath]
+        guard currentValue != value else { return false }
+
+        _state[keyPath: keyPath] = value
+        notifyChange(for: keyPath)
+        return true
     }
 }
 
@@ -452,21 +529,15 @@ extension Supervisor {
             if let resultAction {
                 self.send(resultAction)
             }
-            
-        case .subscribe:
-            // Start a detached task that iterates through the async sequence,
-            // emitting each value as an action back to the supervisor
-            Task { [weak self] in
-                guard let self else { return }
 
-                await self.worker.runSubscription(
-                    work,
-                    using: self.dependency,
-                    onAction: { [weak self] action in
-                        self?.send(action)
-                    }
-                )
-            }
+        case .subscribe:
+            await self.worker.runSubscription(
+                work,
+                using: self.dependency,
+                onAction: { [weak self] action in
+                    self?.send(action)
+                }
+            )
         }
     }
 }

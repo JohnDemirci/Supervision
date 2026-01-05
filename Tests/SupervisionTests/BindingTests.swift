@@ -14,7 +14,7 @@ import Testing
 struct FormFeature: FeatureProtocol {
     typealias Dependency = Void
 
-    struct State {
+    struct State: Equatable {
         var username: String = ""
         var email: String = ""
         var age: Int = 18
@@ -76,7 +76,7 @@ struct FormFeature: FeatureProtocol {
 struct UIStateFeature: FeatureProtocol {
     typealias Dependency = Void
 
-    struct State {
+    struct State: Equatable {
         var volume: Double = 50
         var brightness: Double = 75
         var selectedTab: Int = 0
@@ -244,7 +244,7 @@ struct BindingTests {
         struct MixedFeature: FeatureProtocol {
             typealias Dependency = Void
 
-            struct State {
+            struct State: Equatable {
                 var name: String = ""          // Business logic
                 var sliderValue: Double = 0    // UI state
             }
@@ -359,7 +359,7 @@ struct BindingTests {
         struct VolumeFeature: FeatureProtocol {
             typealias Dependency = Void
 
-            struct State {
+            struct State: Equatable {
                 var volume: Double = 50
                 var lastCommittedVolume: Double = 50
             }

@@ -95,4 +95,37 @@ public struct BatchBuilder<State>: ~Copyable {
             statePointer: statePointer
         )
     }
+
+    // MARK: - Explicit Set Methods for Equatable Optimization
+
+    /// Sets an Equatable state property, only if the value actually changed.
+    ///
+    /// This method provides an optimization for Equatable types: if the new value
+    /// equals the current value, no mutation occurs and SwiftUI observation is not triggered.
+    ///
+    /// ```swift
+    /// context.modify { batch in
+    ///     batch.set(\.count, to: 42)  // Only triggers if count != 42
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - keyPath: A writable key path to the property to modify.
+    ///   - newValue: The new value to set.
+    public func set<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+        let oldValue = statePointer.pointee[keyPath: keyPath]
+        guard oldValue != newValue else { return }
+        mutateFn(.init(keyPath, newValue))
+    }
+
+    /// Sets a non-Equatable state property unconditionally.
+    ///
+    /// Since the value is not Equatable, the mutation is always applied.
+    ///
+    /// - Parameters:
+    ///   - keyPath: A writable key path to the property to modify.
+    ///   - newValue: The new value to set.
+    public func set<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+        mutateFn(.init(keyPath, newValue))
+    }
 }

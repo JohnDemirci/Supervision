@@ -114,3 +114,27 @@ public struct WritableProjection<State, Value> {
         )
     }
 }
+
+// MARK: - Equatable Optimization
+
+extension WritableProjection where Value: Equatable {
+    /// The current value at this key path, with Equatable-optimized write access.
+    ///
+    /// When the value conforms to Equatable, this property will skip the mutation
+    /// if the new value equals the current value. This prevents unnecessary
+    /// SwiftUI view re-renders.
+    ///
+    /// ```swift
+    /// batch.count.equatableValue = 42  // Only triggers observation if count != 42
+    /// ```
+    public var equatableValue: Value {
+        get {
+            statePointer.pointee[keyPath: keyPath]
+        }
+        nonmutating set {
+            let oldValue = statePointer.pointee[keyPath: keyPath]
+            guard oldValue != newValue else { return }
+            mutateFn(.init(keyPath, newValue))
+        }
+    }
+}

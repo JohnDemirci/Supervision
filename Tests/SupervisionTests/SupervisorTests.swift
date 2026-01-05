@@ -28,7 +28,7 @@ struct SupervisorTests {
 }
 
 struct FootballClubFeature: FeatureProtocol {
-    struct State {
+    struct State: Equatable {
         var playerNames: [String] = []
         var matchesPlayed: Int = 0
         var localLeague: String = ""

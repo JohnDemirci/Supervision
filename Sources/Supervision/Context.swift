@@ -63,20 +63,30 @@
 /// }
 /// ```
 ///
+/// ## Equatable Optimization
+///
+/// When using `modify(_:to:)` with Equatable types, the mutation is skipped
+/// if the new value equals the current value. This prevents unnecessary
+/// SwiftUI view re-renders:
+///
+/// ```swift
+/// context.modify(\.count, to: 5)  // Only triggers observation if count != 5
+/// ```
+///
 /// ## Non-Copyable Design
 ///
 /// Context is marked `~Copyable` to prevent it from escaping the `process` method.
 /// This ensures state mutations are synchronous and contained:
 ///
 /// ```swift
-/// // ❌ This won't compile - Context cannot escape
+/// // This won't compile - Context cannot escape
 /// func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
 ///     return .run { env in
 ///         context.state.count += 1  // Error: cannot capture borrowing parameter
 ///     }
 /// }
 ///
-/// // ✅ Mutate before returning Work
+/// // Mutate before returning Work
 /// func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
 ///     context.state.isLoading = true  // OK: synchronous mutation
 ///     return .run { env in
@@ -91,6 +101,7 @@
 /// - **Reads**: Zero-copy via pointer dereference, O(1)
 /// - **Mutations**: Direct pointer write, O(1)
 /// - **Batching**: Groups mutations for logical clarity
+/// - **Equatable check**: Skips no-op mutations
 @MainActor
 @dynamicMemberLookup
 public struct Context<State>: ~Copyable {
@@ -98,16 +109,17 @@ public struct Context<State>: ~Copyable {
     internal let mutateFn: (AnyMutation<State>) -> Void
 
     @usableFromInline
-    internal let statePointer: UnsafeMutablePointer<State>
+    internal let statePointer: UnsafePointer<State>
 
+    /// Optional callback invoked when a mutation actually occurs (for testing purposes).
     @usableFromInline
-    internal let onMutate: () -> Void
+    internal let onMutate: (() -> Void)?
 
     @inlinable
     internal init(
         mutateFn: @escaping (AnyMutation<State>) -> Void,
-        statePointer: UnsafeMutablePointer<State>,
-        onMutate: @escaping () -> Void = {}
+        statePointer: UnsafePointer<State>,
+        onMutate: (() -> Void)? = nil
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
@@ -143,72 +155,86 @@ public struct Context<State>: ~Copyable {
         statePointer.pointee[keyPath: keyPath]
     }
 
-    /// The current state, available for reading and direct mutation.
-    ///
-    /// ```swift
-    /// // Reading
-    /// let count = context.state.count
-    ///
-    /// // Mutating
-    /// context.state.count += 1
-    /// context.state.userName = "John"
-    /// ```
     @inlinable
     public var state: State {
         get {
             statePointer.pointee
         }
-        nonmutating set {
-            onMutate()
-            statePointer.pointee = newValue
-        }
     }
 
-    // MARK: - Mutations
-
-    /// Sets a state property to a new value using a key path.
+    /// Sets an `Equatable` state property to a new value, only if it differs from the current value.
+    ///
+    /// This overload provides an optimization for `Equatable` types: if the new value
+    /// equals the current value, no mutation occurs and SwiftUI observation is not triggered.
+    /// This prevents unnecessary SwiftUI view refreshes.
     ///
     /// ```swift
-    /// context.modify(\.userName, to: "John")
-    /// context.modify(\.isLoading, to: true)
+    /// context.modify(\.count, to: 5)  // Only triggers if count != 5
+    /// context.modify(\.name, to: name) // Only triggers if name changed
     /// ```
     ///
     /// - Parameters:
     ///   - keyPath: A writable key path to the property to modify.
     ///   - newValue: The new value to set.
     @inlinable
-    public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
-        onMutate()
+    public func modify<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+        let oldValue = statePointer.pointee[keyPath: keyPath]
+        guard oldValue != newValue else { return }
+        onMutate?()
         mutateFn(.init(keyPath, newValue))
     }
 
-    /// Mutates a state property in-place using a closure.
+    /// Sets a state property to a new value unconditionally.
     ///
-    /// Use this for complex mutations on collections or nested types:
+    /// Unlike the Equatable overload, this always applies the mutation regardless
+    /// of whether the value changed. Use this for non-Equatable types.
+    ///
+    /// - Parameters:
+    ///   - keyPath: A writable key path to the property to modify.
+    ///   - newValue: The new value to set.
+    @inlinable
+    public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
+        onMutate?()
+        mutateFn(.init(keyPath, newValue))
+    }
+
+    /// Mutates a state property in-place with an Equatable check.
+    ///
+    /// The mutation is only applied if the resulting value differs from the original.
+    /// This prevents unnecessary SwiftUI view refreshes.
     ///
     /// ```swift
-    /// context.modify(\.items) { items in
-    ///     items.append(newItem)
-    ///     items.removeAll { $0.isExpired }
-    ///     items.sort(by: { $0.date > $1.date })
-    /// }
-    ///
-    /// context.modify(\.user) { user in
-    ///     user.name = "John"
-    ///     user.email = "john@example.com"
+    /// context.modify(\.count) { count in
+    ///     count = max(0, count)  // Only triggers if value actually changed
     /// }
     /// ```
     ///
     /// - Parameters:
     ///   - keyPath: A writable key path to the property to modify.
-    ///   - modify: A closure that receives the value as `inout` for mutation.
+    ///   - mutation: A closure that mutates the value in place.
     @inlinable
-    public func modify<Value>(
-        _ keyPath: WritableKeyPath<State, Value>,
-        _ modify: (inout Value) -> Void
-    ) {
-        onMutate()
-        modify(&statePointer.pointee[keyPath: keyPath])
+    public func modify<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, _ mutation: (inout Value) -> Void) {
+        let oldValue = statePointer.pointee[keyPath: keyPath]
+        var newValue = oldValue
+        mutation(&newValue)
+        guard oldValue != newValue else { return }
+        onMutate?()
+        mutateFn(.init(keyPath, newValue))
+    }
+
+    /// Mutates a non-Equatable state property in-place.
+    ///
+    /// Since the value is not Equatable, the mutation is always applied.
+    ///
+    /// - Parameters:
+    ///   - keyPath: A writable key path to the property to modify.
+    ///   - mutation: A closure that mutates the value in place.
+    @inlinable
+    public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, _ mutation: (inout Value) -> Void) {
+        var value = statePointer.pointee[keyPath: keyPath]
+        mutation(&value)
+        onMutate?()
+        mutateFn(.init(keyPath, value))
     }
 
     // MARK: - Batching
@@ -232,12 +258,12 @@ public struct Context<State>: ~Copyable {
     ///   there is no transactional rollback.
     @inline(never)
     public func modify(_ build: (borrowing BatchBuilder<State>) -> Void) {
-        let onMutate = self.onMutate
         let mutateFn = self.mutateFn
+        let onMutate = self.onMutate
         build(
             BatchBuilder<State>(
                 mutateFn: { mutation in
-                    onMutate()
+                    onMutate?()
                     mutateFn(mutation)
                 },
                 statePointer: statePointer

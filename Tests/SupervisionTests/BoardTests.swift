@@ -29,7 +29,7 @@ struct UserFeature: FeatureProtocol {
         let client: UserClient
     }
     
-    struct State {
+    struct State: Equatable {
         var name: String = "something"
     }
     
@@ -47,7 +47,7 @@ struct DeviceFeature: FeatureProtocol {
         let client: UserClient
     }
     
-    struct State: Identifiable {
+    struct State: Identifiable, Equatable {
         let id: String
         var devices: [String] = []
     }
@@ -60,7 +60,7 @@ struct DeviceFeature: FeatureProtocol {
 struct VoidFeature: FeatureProtocol {
     typealias Dependency = Void
     
-    struct State {}
+    struct State: Equatable {}
     
     enum Action {
         case nothing
@@ -74,7 +74,7 @@ struct VoidFeature: FeatureProtocol {
 struct IdentifiableVoidFeature: FeatureProtocol {
     typealias Dependency = Void
     
-    struct State: Identifiable {
+    struct State: Identifiable, Equatable {
         let id: String
     }
     

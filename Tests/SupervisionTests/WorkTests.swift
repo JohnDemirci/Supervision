@@ -274,7 +274,7 @@ struct WorkTransformationTests {
             return env.value
         }
 
-        let mappedWork = try work.map { value in
+        let mappedWork = work.map { value in
             TestAction.loaded(value * 2)
         }
 
@@ -298,48 +298,6 @@ struct WorkTransformationTests {
         }
 
         #expect(mappedWork.cancellationID == "test-id")
-    }
-
-    @Test("map throws on none operation")
-    func mapThrowsOnNone() async throws {
-        let work: Work<TestAction, TestEnvironment> = .empty()
-
-        #expect {
-            try work.map { $0 }
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to map a non-task work unit"
-        }
-    }
-
-    @Test("map throws on cancellation operation")
-    func mapThrowsOnCancellation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .cancel("some-id")
-
-        #expect {
-            try work.map { $0 }
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to map a cancellation work unit"
-        }
-    }
-
-    @Test("map throws on fireAndForget operation")
-    func mapThrowsOnFireAndForget() async throws {
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { _ in }
-
-        #expect {
-            try work.map { $0 }
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to map a fire-and-forget work unit"
-        }
     }
 
     @Test("flatMap chains work correctly")
@@ -380,60 +338,6 @@ struct WorkTransformationTests {
             #expect(priority == .background)
         default:
             Issue.record("Expected .task operation")
-        }
-    }
-
-    @Test("flatMap throws on none operation")
-    func flatMapThrowsOnNone() async throws {
-        let work: Work<TestAction, TestEnvironment> = .empty()
-
-        let flatMapTransform: @Sendable (TestAction) -> Work<String, TestEnvironment> = { _ in
-            Work<String, TestEnvironment>.run { _ in "result" }
-        }
-
-        #expect {
-            try work.flatMap(flatMapTransform)
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to flatMap a none work unit"
-        }
-    }
-
-    @Test("flatMap throws on cancellation operation")
-    func flatMapThrowsOnCancellation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .cancel("some-id")
-
-        let flatMapTransform: @Sendable (TestAction) -> Work<String, TestEnvironment> = { _ in
-            Work<String, TestEnvironment>.run { _ in "result" }
-        }
-
-        #expect {
-            try work.flatMap(flatMapTransform)
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to flatMap a cancellation work unit"
-        }
-    }
-
-    @Test("flatMap throws on fireAndForget operation")
-    func flatMapThrowsOnFireAndForget() async throws {
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { _ in }
-
-        let flatMapTransform: @Sendable (TestAction) -> Work<String, TestEnvironment> = { _ in
-            Work<String, TestEnvironment>.run { _ in "result" }
-        }
-
-        #expect {
-            try work.flatMap(flatMapTransform)
-        } throws: { error in
-            guard let failure = error as? Work<TestAction, TestEnvironment>.Failure else {
-                return false
-            }
-            return failure.description == "Attempting to flatMap a fireAndForget work unit"
         }
     }
 

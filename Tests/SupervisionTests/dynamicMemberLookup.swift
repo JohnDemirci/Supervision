@@ -11,7 +11,7 @@ import Testing
 // MARK: - Test Feature
 
 private struct CounterFeature: FeatureProtocol {
-    struct State {
+    struct State: Equatable {
         var count: Int = 0
         var name: String = "Counter"
         var isEnabled: Bool = true
