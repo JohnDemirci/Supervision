@@ -279,22 +279,34 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         // Track which keyPaths are mutated for granular notification
         var mutatedKeyPaths: Set<PartialKeyPath<State>> = []
 
-        let work = withUnsafeMutablePointer(to: &_state) { pointer in
+        let previousValue = _state
+
+        // Note: [weak self] is not needed here because this closure is non-escaping.
+        // Although Context stores an @escaping closure (mutateFn), the Context itself
+        // is borrowed (not stored) by feature.process() and is deallocated when this
+        // method returns. The strong capture of self is scoped to this synchronous call.
+        let work: Work<Action, Dependency> = withUnsafeMutablePointer(to: &_state) { [self] pointer in
             let context = Context<Feature.State>(
                 mutateFn: { mutation in
-                    // Apply mutation immediately so subsequent reads see the new value
                     mutation.apply(&pointer.pointee)
-                    // Track the keyPath for notification after process() completes
+
+//                    if previousValue != pointer.pointee {
+//                        //self.notifyChange(for: mutation.keyPath)
+//                        mutatedKeyPaths.insert(mutation.keyPath)
+//                    }
+
                     mutatedKeyPaths.insert(mutation.keyPath)
                 },
                 statePointer: UnsafePointer(pointer)
             )
-            return feature.process(action: action, context: context)
+
+            return self.feature.process(action: action, context: context)
         }
 
-        // Notify only the affected keyPaths - views observing other properties won't re-render
-        for keyPath in mutatedKeyPaths {
-            notifyChange(for: keyPath)
+        if previousValue != _state {
+            mutatedKeyPaths.forEach {
+                self.notifyChange(for: $0)
+            }
         }
 
         switch work.operation {
