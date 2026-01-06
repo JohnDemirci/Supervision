@@ -132,6 +132,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     private var processingTask: Task<Void, Never>?
 
     private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
+    private let observationMap: Feature.ObservationMap
 
     /// A unique identifier for this supervisor instance.
     ///
@@ -183,6 +184,14 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
             bufferingPolicy: .unbounded
         )
 
+        var placeholder = [PartialKeyPath<State>: [PartialKeyPath<State>]]()
+        feature.observationMap.forEach { kvp in
+            kvp.value.forEach { valueKeypath in
+                placeholder[valueKeypath, default: []].append(kvp.key)
+            }
+        }
+        self.observationMap = placeholder
+
         self.actionStream = stream
         self.actionContinuation = continuation
 
@@ -219,8 +228,12 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
     @inline(__always)
     private func notifyChange(for keyPath: PartialKeyPath<State>) {
-        if let existingToken = _observationTokens[keyPath] {
-            existingToken.increment()
+        _observationTokens[keyPath]?.increment()
+
+        if let computedPropertyKeypaths = observationMap[keyPath] {
+            computedPropertyKeypaths.forEach { computedPorpertyKeypath in
+                _observationTokens[computedPorpertyKeypath]?.increment()
+            }
         }
     }
 

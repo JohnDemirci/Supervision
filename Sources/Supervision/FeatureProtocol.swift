@@ -118,6 +118,7 @@ import Foundation
 /// processing occur on the main thread.
 @MainActor
 public protocol FeatureProtocol {
+    typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
     /// The state managed by this feature.
     ///
     /// State should be a value type (struct or enum) to ensure predictable behavior.
@@ -130,6 +131,74 @@ public protocol FeatureProtocol {
     /// }
     /// ```
     associatedtype State: Equatable
+
+    /// This property helps with sending observation notifications to the system
+    /// It is typically used for computed properties
+    /// When you have a computed property, you need to denote which keypaths the computed property depend on.
+    /// If they do not depend on any keypaths then they should live elsewhere
+    ///
+    /// A mapping of computed properties to their underlying stored property dependencies.
+    ///
+    /// Use this property to declare which stored properties a computed property depends on,
+    /// enabling precise observation notifications when those stored properties change.
+    ///
+    /// ## Overview
+    ///
+    /// When your feature's `State` includes computed properties, you must specify which
+    /// stored properties they depend on. This allows the observation system to trigger
+    /// notifications for computed properties when their dependencies change.
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// struct State: Equatable {
+    ///     var firstName: String = ""
+    ///     var lastName: String = ""
+    ///
+    ///     var fullName: String {
+    ///         "\(firstName) \(lastName)"
+    ///     }
+    ///
+    ///     var age: Int = 0
+    ///     var canVote: Bool {
+    ///         age >= 18
+    ///     }
+    /// }
+    ///
+    /// var observationMap: ObservationMap {
+    ///     [
+    ///         \State.fullName: [\State.firstName, \State.lastName],
+    ///         \State.canVote: [\State.age]
+    ///     ]
+    /// }
+    /// ```
+    ///
+    /// In this example:
+    /// - When `firstName` or `lastName` changes, observers of `fullName` are notified
+    /// - When `age` changes, observers of `canVote` are notified
+    ///
+    /// ## Default Implementation
+    ///
+    /// If your feature has no computed properties, return an empty dictionary:
+    ///
+    /// ```swift
+    /// var observationMap: ObservationMap {
+    ///     [:]
+    /// }
+    /// ```
+    ///
+    /// ## Rules
+    ///
+    /// - Keys are keypaths to computed properties in your `State`
+    /// - Values are arrays of keypaths to the stored properties they depend on
+    /// - Only include computed properties that are actually observed in your UI
+    /// - Computed properties that don't depend on stored properties should be moved
+    ///   to view logic or helpers outside of `State`
+    ///
+    /// - Note: This is required for the observation system to correctly track changes
+    ///   to computed properties. Without it, SwiftUI views observing computed properties
+    ///   may not update when the underlying stored properties change.
+    var observationMap: ObservationMap { get }
 
     /// The actions that can be dispatched to this feature.
     ///
@@ -212,6 +281,12 @@ public protocol FeatureProtocol {
     ///
     /// If your feature needs configuration, pass it through the `Dependency` type instead.
     init()
+}
+
+extension FeatureProtocol {
+    public var observationMap: ObservationMap {
+        [:]
+    }
 }
 
 /// Type-erased mutation that can be applied to state.
