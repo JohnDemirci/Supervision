@@ -111,19 +111,13 @@ public struct Context<State>: ~Copyable {
     @usableFromInline
     internal let statePointer: UnsafePointer<State>
 
-    /// Optional callback invoked when a mutation actually occurs (for testing purposes).
-    @usableFromInline
-    internal let onMutate: (() -> Void)?
-
     @inlinable
     internal init(
         mutateFn: @escaping (AnyMutation<State>) -> Void,
-        statePointer: UnsafePointer<State>,
-        onMutate: (() -> Void)? = nil
+        statePointer: UnsafePointer<State>
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
-        self.onMutate = onMutate
     }
 
     // MARK: - Zero-Copy Reads
@@ -180,7 +174,6 @@ public struct Context<State>: ~Copyable {
     public func modify<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
         let oldValue = statePointer.pointee[keyPath: keyPath]
         guard oldValue != newValue else { return }
-        onMutate?()
         mutateFn(.init(keyPath, newValue))
     }
 
@@ -193,8 +186,8 @@ public struct Context<State>: ~Copyable {
     ///   - keyPath: A writable key path to the property to modify.
     ///   - newValue: The new value to set.
     @inlinable
+    @_disfavoredOverload
     public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
-        onMutate?()
         mutateFn(.init(keyPath, newValue))
     }
 
@@ -213,12 +206,14 @@ public struct Context<State>: ~Copyable {
     ///   - keyPath: A writable key path to the property to modify.
     ///   - mutation: A closure that mutates the value in place.
     @inlinable
-    public func modify<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, _ mutation: (inout Value) -> Void) {
+    public func modify<Value: Equatable>(
+        _ keyPath: WritableKeyPath<State, Value>,
+        _ mutation: (inout Value) -> Void
+    ) {
         let oldValue = statePointer.pointee[keyPath: keyPath]
         var newValue = oldValue
         mutation(&newValue)
         guard oldValue != newValue else { return }
-        onMutate?()
         mutateFn(.init(keyPath, newValue))
     }
 
@@ -230,10 +225,10 @@ public struct Context<State>: ~Copyable {
     ///   - keyPath: A writable key path to the property to modify.
     ///   - mutation: A closure that mutates the value in place.
     @inlinable
+    @_disfavoredOverload
     public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, _ mutation: (inout Value) -> Void) {
         var value = statePointer.pointee[keyPath: keyPath]
         mutation(&value)
-        onMutate?()
         mutateFn(.init(keyPath, value))
     }
 
@@ -259,11 +254,9 @@ public struct Context<State>: ~Copyable {
     @inline(never)
     public func modify(_ build: (borrowing BatchBuilder<State>) -> Void) {
         let mutateFn = self.mutateFn
-        let onMutate = self.onMutate
         build(
             BatchBuilder<State>(
                 mutateFn: { mutation in
-                    onMutate?()
                     mutateFn(mutation)
                 },
                 statePointer: statePointer

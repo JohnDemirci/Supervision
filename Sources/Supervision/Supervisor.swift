@@ -9,7 +9,6 @@ import Foundation
 import Observation
 import OSLog
 
-
 /// The central coordinator for a feature's state, actions, and side effects.
 ///
 /// `Supervisor` is the runtime that drives your feature. It holds the current state,
@@ -163,10 +162,10 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
         #if DEBUG
         let mirror = Mirror(reflecting: state)
-        if mirror.displayStyle != .struct, mirror.displayStyle != .enum {
+        if mirror.displayStyle != .struct {
             logger.error(
                 """
-                Warning: State should be a struct or enum (value type).
+                Warning: State should be a struct (value type).
                 Using reference types (classes) can lead to unexpected behavior.
                 Current State type: \(type(of: state))
                 """
@@ -179,7 +178,11 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         self.worker = .init()
         self.feature = Feature()
 
-        let (stream, continuation) = AsyncStream.makeStream(of: Work<Action, Dependency>.self, bufferingPolicy: .unbounded)
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: Work<Action, Dependency>.self,
+            bufferingPolicy: .unbounded
+        )
+
         self.actionStream = stream
         self.actionContinuation = continuation
 
@@ -277,9 +280,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
         // Track which keyPaths are mutated for granular notification
-        var mutatedKeyPaths: Set<PartialKeyPath<State>> = []
-
-        let previousValue = _state
+        //var mutatedKeyPaths: Set<PartialKeyPath<State>> = []
 
         // Note: [weak self] is not needed here because this closure is non-escaping.
         // Although Context stores an @escaping closure (mutateFn), the Context itself
@@ -287,26 +288,14 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         // method returns. The strong capture of self is scoped to this synchronous call.
         let work: Work<Action, Dependency> = withUnsafeMutablePointer(to: &_state) { [self] pointer in
             let context = Context<Feature.State>(
-                mutateFn: { mutation in
+                mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
-
-//                    if previousValue != pointer.pointee {
-//                        //self.notifyChange(for: mutation.keyPath)
-//                        mutatedKeyPaths.insert(mutation.keyPath)
-//                    }
-
-                    mutatedKeyPaths.insert(mutation.keyPath)
+                    self.notifyChange(for: mutation.keyPath)
                 },
                 statePointer: UnsafePointer(pointer)
             )
 
             return self.feature.process(action: action, context: context)
-        }
-
-        if previousValue != _state {
-            mutatedKeyPaths.forEach {
-                self.notifyChange(for: $0)
-            }
         }
 
         switch work.operation {
@@ -427,13 +416,9 @@ extension Supervisor {
 
         case let .cancellation(id):
             await self.worker.cancel(taskID: id)
-            return
 
         case .fireAndForget:
-            Task {
-                _ = await worker.run(work, using: dependency)
-            }
-            return
+            Task { _ = await worker.run(work, using: dependency) }
 
         case .task:
             let resultAction = await self.worker.run(work, using: self.dependency)
