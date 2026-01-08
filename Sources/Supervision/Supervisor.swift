@@ -184,13 +184,13 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
             bufferingPolicy: .unbounded
         )
 
-        var placeholder = [PartialKeyPath<State>: [PartialKeyPath<State>]]()
-        feature.observationMap.forEach { kvp in
+        // reverse the observationMap provided by the feature
+        // this makes it easier to notify the changes
+        self.observationMap = feature.observationMap.reduce(into: Feature.ObservationMap()) { partialResult, kvp in
             kvp.value.forEach { valueKeypath in
-                placeholder[valueKeypath, default: []].append(kvp.key)
+                partialResult[valueKeypath, default: []].append(kvp.key)
             }
         }
-        self.observationMap = placeholder
 
         self.actionStream = stream
         self.actionContinuation = continuation

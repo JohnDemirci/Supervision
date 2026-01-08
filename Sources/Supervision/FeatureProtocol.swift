@@ -289,16 +289,11 @@ extension FeatureProtocol {
     }
 }
 
-/// Type-erased mutation that can be applied to state.
-/// Includes the keyPath for granular observation tracking.
 @usableFromInline
 struct AnyMutation<State> {
-    /// The type-erased keyPath that this mutation affects.
-    /// Used by Supervisor to notify only observers of this specific property.
     @usableFromInline
     let keyPath: PartialKeyPath<State>
 
-    /// The closure that applies the mutation to the state.
     @usableFromInline
     var apply: (inout State) -> Void
 
