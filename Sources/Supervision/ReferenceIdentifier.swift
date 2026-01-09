@@ -49,13 +49,14 @@ public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Senda
     /// - For non-identifiable state: An `ObjectIdentifier` of the supervisor type
     public let id: AnyHashable
 
-    /// Creates a reference identifier with the given hashable value.
-    ///
-    /// - Parameter id: Any hashable value to use as the identifier.
     init(id: AnyHashable) {
         self.id = id
     }
 
+    /*
+     in case a feature's state conforms to the identifiable protocol and andother feature's state's id is the same as the first feature, their ids may collide.
+     therefore this initializer is implemented where the objectIdentifier(Feature.swlf) is added in order to make sure the ids across features never collide.
+     */
     init(_ ids: AnyHashable...) {
         precondition(!ids.isEmpty, "ReferenceIdentifier requires at least one ID")
         self.id = AnyHashable(ids)
