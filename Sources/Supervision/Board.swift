@@ -29,9 +29,21 @@ public final class Board<Dependency> {
             supervisors.count
         }
     #endif
+
+    private func getOrCreate<Feature: FeatureProtocol>(
+        id: ReferenceIdentifier,
+        create: () -> Supervisor<Feature>
+    ) -> Supervisor<Feature> {
+        if let existing = supervisors.object(forKey: id) {
+            return unsafeDowncast(existing, to: Supervisor<Feature>.self)
+        }
+        let supervisor = create()
+        supervisors.setObject(supervisor, forKey: supervisor.id)
+        return supervisor
+    }
 }
 
-public extension Board {
+extension Board {
     /// Provides a **Supervisor** which has a generic over the given Feature.
     /// If the supervisor exists within the memory, it will be returned, otherwise a new instance is created
     ///
@@ -40,22 +52,12 @@ public extension Board {
     ///    - dependencyClosure: Closure capturing the Application's Dependency and returns Feature's Dependency
     ///
     /// - Returns: ``Supervisor<Feature>``
-    func supervisor<Feature: FeatureProtocol>(
+    public func supervisor<Feature: FeatureProtocol>(
         state: Feature.State,
         _ dependencyClosure: @Sendable @escaping (Dependency) -> Feature.Dependency
     ) -> Supervisor<Feature> where Feature.State: Identifiable {
-        let id = ReferenceIdentifier(id: state.id as AnyHashable)
-
-        if let existingSupervisor = supervisors.object(forKey: id) {
-            return unsafeDowncast(existingSupervisor, to: Supervisor<Feature>.self)
-        } else {
-            let newSupervisor = Supervisor<Feature>(
-                state: state,
-                dependency: dependencyClosure(dependency)
-            )
-
-            supervisors.setObject(newSupervisor, forKey: newSupervisor.id)
-            return newSupervisor
+        getOrCreate(id: ReferenceIdentifier(id: state.id as AnyHashable)) {
+            Supervisor<Feature>(state: state, dependency: dependencyClosure(dependency))
         }
     }
 
@@ -68,22 +70,13 @@ public extension Board {
     ///    - dependencyClosure: Closure capturing the Application's Dependency and returns Feature's Dependency
     ///
     /// - Returns: ``Supervisor<Feature>``
-    func supervisor<Feature: FeatureProtocol>(
+    public func supervisor<Feature: FeatureProtocol>(
         type _: Feature.Type = Feature.self,
         state: Feature.State,
         _ dependencyClosure: @Sendable @escaping (Dependency) -> Feature.Dependency
     ) -> Supervisor<Feature> {
-        let id = ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)
-        if let existingSupervisor = supervisors.object(forKey: id) {
-            return unsafeDowncast(existingSupervisor, to: Supervisor<Feature>.self)
-        } else {
-            let newSupervisor = Supervisor<Feature>(
-                state: state,
-                dependency: dependencyClosure(dependency)
-            )
-
-            supervisors.setObject(newSupervisor, forKey: newSupervisor.id)
-            return newSupervisor
+        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)) {
+            Supervisor<Feature>(state: state, dependency: dependencyClosure(dependency))
         }
     }
 
@@ -95,21 +88,12 @@ public extension Board {
     ///    - state: Feature.State
     ///
     /// - Returns: ``Supervisor<Feature>``
-    func supervisor<Feature: FeatureProtocol>(
+    public func supervisor<Feature: FeatureProtocol>(
         type _: Feature.Type = Feature.self,
         state: Feature.State
     ) -> Supervisor<Feature> where Feature.Dependency == Void {
-        let id = ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)
-        if let existingSupervisor = supervisors.object(forKey: id) {
-            return unsafeDowncast(existingSupervisor, to: Supervisor<Feature>.self)
-        } else {
-            let newSupervisor = Supervisor<Feature>(
-                state: state,
-                dependency: ()
-            )
-
-            supervisors.setObject(newSupervisor, forKey: newSupervisor.id)
-            return newSupervisor
+        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)) {
+            Supervisor<Feature>(state: state, dependency: ())
         }
     }
 
@@ -120,21 +104,11 @@ public extension Board {
     ///    - state: Feature.State
     ///
     /// - Returns: ``Supervisor<Feature>``
-    func supervisor<Feature: FeatureProtocol>(
+    public func supervisor<Feature: FeatureProtocol>(
         state: Feature.State
     ) -> Supervisor<Feature> where Feature.Dependency == Void, Feature.State: Identifiable {
-        let id = ReferenceIdentifier(id: state.id as AnyHashable)
-
-        if let existingSupervisor = supervisors.object(forKey: id) {
-            return unsafeDowncast(existingSupervisor, to: Supervisor<Feature>.self)
-        } else {
-            let newSupervisor = Supervisor<Feature>(
-                state: state,
-                dependency: ()
-            )
-
-            supervisors.setObject(newSupervisor, forKey: newSupervisor.id)
-            return newSupervisor
+        getOrCreate(id: ReferenceIdentifier(id: state.id as AnyHashable)) {
+            Supervisor<Feature>(state: state, dependency: ())
         }
     }
 }

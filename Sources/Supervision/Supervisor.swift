@@ -117,17 +117,16 @@ import OSLog
 @dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
-
     public typealias Dependency = Feature.Dependency
-
     public typealias State = Feature.State
+    public typealias CancellationID = Feature.CancellationID
 
     private nonisolated let logger: Logger
 
-    private let actionContinuation: AsyncStream<Work<Action, Dependency>>.Continuation
-    private let actionStream: AsyncStream<Work<Action, Dependency>>
+    private let actionContinuation: AsyncStream<Work<Action, Dependency, CancellationID>>.Continuation
+    private let actionStream: AsyncStream<Work<Action, Dependency, CancellationID>>
     private let dependency: Dependency
-    private let worker: Worker<Action, Dependency>
+    private let worker: Worker<Action, Dependency, CancellationID>
 
     private var processingTask: Task<Void, Never>?
 
@@ -180,13 +179,15 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         self.feature = Feature()
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: Work<Action, Dependency>.self,
+            of: Work<Action, Dependency, CancellationID>.self,
             bufferingPolicy: .unbounded
         )
 
         // reverse the observationMap provided by the feature
         // this makes it easier to notify the changes
-        self.observationMap = feature.observationMap.reduce(into: Feature.ObservationMap()) { partialResult, kvp in
+        self.observationMap = feature.observationMap.reduce(
+            into: Feature.ObservationMap()
+        ) { partialResult, kvp in
             kvp.value.forEach { valueKeypath in
                 partialResult[valueKeypath, default: []].append(kvp.key)
             }
@@ -231,8 +232,8 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         _observationTokens[keyPath]?.increment()
 
         if let computedPropertyKeypaths = observationMap[keyPath] {
-            computedPropertyKeypaths.forEach { computedPorpertyKeypath in
-                _observationTokens[computedPorpertyKeypath]?.increment()
+            computedPropertyKeypaths.forEach { computedPropertyKeypath in
+                _observationTokens[computedPropertyKeypath]?.increment()
             }
         }
     }
@@ -292,14 +293,11 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     ///
     /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
-        // Track which keyPaths are mutated for granular notification
-        //var mutatedKeyPaths: Set<PartialKeyPath<State>> = []
-
         // Note: [weak self] is not needed here because this closure is non-escaping.
         // Although Context stores an @escaping closure (mutateFn), the Context itself
         // is borrowed (not stored) by feature.process() and is deallocated when this
         // method returns. The strong capture of self is scoped to this synchronous call.
-        let work: Work<Action, Dependency> = withUnsafeMutablePointer(to: &_state) { [self] pointer in
+        let work: Work<Action, Dependency, CancellationID> = withUnsafeMutablePointer(to: &_state) { [self] pointer in
             let context = Context<Feature.State>(
                 mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
@@ -426,7 +424,7 @@ public extension Supervisor {
 }
 
 extension Supervisor {
-    private func processAsyncWork(_ work: Work<Action, Dependency>) async {
+    private func processAsyncWork(_ work: Work<Action, Dependency, CancellationID>) async {
         switch work.operation {
         case .none:
             return

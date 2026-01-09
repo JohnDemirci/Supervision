@@ -119,6 +119,53 @@ import Foundation
 @MainActor
 public protocol FeatureProtocol {
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
+
+    /// A type used to identify and manage cancellable side effects.
+    ///
+    /// `CancellationID` allows you to tag ``Work`` effects with identifiers so they can be
+    /// cancelled when no longer needed. This is essential for managing long-running operations
+    /// like network requests, timers, or animations.
+    ///
+    /// ## Overview
+    ///
+    /// When you return ``Work`` from ``process(action:context:)``, you can assign it a
+    /// cancellation ID. Later actions can cancel any work with that ID, preventing
+    /// redundant operations or cleaning up when the user navigates away.
+    ///
+    /// ## Defining Cancellation IDs
+    ///
+    /// Define your cancellation IDs as an enum conforming to ``Cancellation``:
+    ///
+    /// ```swift
+    /// struct SearchFeature: FeatureProtocol {
+    ///     enum CancellationID: Cancellation {
+    ///         case search
+    ///         case debounce
+    ///     }
+    ///
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// ## Default Implementation
+    ///
+    /// If your feature has no cancellable effects, the default `Never` type is used:
+    ///
+    /// ```swift
+    /// struct SimpleFeature: FeatureProtocol {
+    ///     // CancellationID defaults to Never - no cancellation needed
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// ## Best Practices
+    ///
+    /// - Use descriptive names that indicate what operation is being cancelled
+    ///
+    /// - Note: Cancellation IDs must conform to `Hashable` and `Sendable` to safely
+    ///   identify work across actor boundaries.
+    associatedtype CancellationID: Cancellation = Never
+
     /// The state managed by this feature.
     ///
     /// State should be a value type (struct or enum) to ensure predictable behavior.
@@ -265,7 +312,7 @@ public protocol FeatureProtocol {
     ///
     /// - Note: The context is `borrowing` to prevent escaping. State mutations
     ///   are synchronous and complete before this method returns.
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency>
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency, CancellationID>
 
     /// Creates a new instance of the feature.
     ///
@@ -308,3 +355,5 @@ struct AnyMutation<State> {
         }
     }
 }
+
+public protocol Cancellation: Hashable, Sendable {}

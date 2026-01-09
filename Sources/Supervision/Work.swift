@@ -90,21 +90,10 @@ import Foundation
 ///
 /// - Note: `map` and `flatMap` only work on `.task` operations. Attempting to transform
 ///   `.none`, `.cancellation`, or `.fireAndForget` operations will throw a `Failure`.
-public struct Work<Output, Environment>: Sendable {
-    public enum Failure: Error, CustomStringConvertible {
-        case message(String)
-
-        public var description: String {
-            switch self {
-            case let .message(errorMessage):
-                return errorMessage
-            }
-        }
-    }
-
+public struct Work<Output, Environment, CancellationID: Cancellation>: Sendable {
     enum Operation {
         case none
-        case cancellation(String)
+        case cancellation(CancellationID)
         case fireAndForget(
             TaskPriority?,
             @Sendable (Environment) async throws -> Void
@@ -118,12 +107,12 @@ public struct Work<Output, Environment>: Sendable {
         )
     }
 
-    let cancellationID: String?
+    let cancellationID: CancellationID?
     let operation: Operation
     let onError: (@Sendable (Error) -> Output)?
 
     init(
-        cancellationID: String? = nil,
+        cancellationID: CancellationID? = nil,
         operation: Operation,
         onError: (@Sendable (Error) -> Output)? = nil
     ) {
@@ -147,8 +136,8 @@ public extension Work {
     /// ```
     ///
     /// - Returns: A work unit with no operation.
-    static func empty<O, E>() -> Work<O, E> {
-        Work<O, E>(operation: .none)
+    static func empty<O, E>() -> Work<O, E, Never> {
+        Work<O, E, Never>(operation: .none)
     }
 
     /// Creates a work unit that cancels a previously started task.
@@ -163,9 +152,9 @@ public extension Work {
     /// - Parameter id: The cancellation ID of the work to cancel.
     ///   Must match the ID passed to ``cancellable(id:)``.
     /// - Returns: A work unit that cancels the specified task.
-    static func cancel(_ id: String) -> Work<Output, Environment> {
+    static func cancel(_ id: CancellationID) -> Work<Output, Environment, CancellationID> {
         Work(
-            cancellationID: nil,
+            cancellationID: id,
             operation: .cancellation(id),
             onError: nil
         )
@@ -189,8 +178,8 @@ public extension Work {
     static func fireAndForget(
         priority: TaskPriority? = nil,
         _ body: @Sendable @escaping (Environment) async throws -> Void
-    ) -> Work<Output, Environment> {
-        Work<Output, Environment>(
+    ) -> Work<Output, Environment, Never> {
+        Work<Output, Environment, Never>(
             operation: .fireAndForget(priority, body)
         )
     }
@@ -226,8 +215,8 @@ public extension Work {
         priority: TaskPriority? = nil,
         _ body: @Sendable @escaping (Environment) async throws -> Value,
         toAction: @Sendable @escaping (Result<Value, Error>) -> Output
-    ) -> Work<Output, Environment> {
-        Work<Output, Environment>(
+    ) -> Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>(
             operation: .task(priority) { env in
                 do {
                     let value = try await body(env)
@@ -262,8 +251,8 @@ public extension Work {
     static func run(
         priority: TaskPriority? = nil,
         _ body: @Sendable @escaping (Environment) async throws -> Output
-    ) -> Work<Output, Environment> {
-        Work<Output, Environment>(operation: .task(priority, body))
+    ) -> Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>(operation: .task(priority, body))
     }
 
     /// Creates work that subscribes to an async sequence and emits actions over time.
@@ -317,10 +306,10 @@ public extension Work {
     ///   - body: A closure that creates an async sequence from the environment
     /// - Returns: A work unit that subscribes to the async sequence
     static func subscribe(
-        cancellationID: String,
+        cancellationID: CancellationID,
         _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Output, Error>
-    ) -> Work<Output, Environment> {
-        Work<Output, Environment>.init(
+    ) -> Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>.init(
             cancellationID: cancellationID,
             operation: .subscribe({ env in
                 try await body(env)
@@ -330,11 +319,11 @@ public extension Work {
     }
     
     static func subscribe<Value>(
-        cancellationID: String? = nil,
+        cancellationID: CancellationID? = nil,
         _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Value, Error>,
         toAction: @Sendable @escaping (Result<Value, Error>) -> Output
-    ) -> Work<Output, Environment> where Output: Sendable, Value: Sendable {
-        Work<Output, Environment>.init(
+    ) -> Work<Output, Environment, CancellationID> where Output: Sendable, Value: Sendable {
+        Work<Output, Environment, CancellationID>(
             cancellationID: cancellationID,
             operation: .subscribe({ env in
                 let currentStream = try await body(env)
@@ -378,7 +367,7 @@ public extension Work {
     /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
     func map<NewOutput>(
         _ transform: @Sendable @escaping (Output) -> NewOutput
-    ) -> Work<NewOutput, Environment> where Output: Sendable, NewOutput: Sendable {
+    ) -> Work<NewOutput, Environment, CancellationID> where Output: Sendable, NewOutput: Sendable {
         switch operation {
         case .none:
             preconditionFailure("Attempting to map a non-task work unit")
@@ -390,7 +379,7 @@ public extension Work {
             preconditionFailure("Attempting to map a fire-and-forget work unit")
 
         case let .task(priority, work):
-            return Work<NewOutput, Environment>(
+            return Work<NewOutput, Environment, CancellationID>(
                 cancellationID: cancellationID,
                 operation: .task(priority) { env in
                     let output = try await work(env)
@@ -400,7 +389,7 @@ public extension Work {
             )
             
         case let .subscribe(sequence):
-            return Work<NewOutput, Environment>.init(
+            return Work<NewOutput, Environment, CancellationID>(
                 cancellationID: self.cancellationID,
                 operation: .subscribe({ env in
                     let originalStream = try await sequence(env)
@@ -444,8 +433,8 @@ public extension Work {
     ///   For `.fireAndForget`, errors are always logged silently.
     func `catch`(
         _ transform: @Sendable @escaping (Error) -> Output
-    ) -> Work<Output, Environment> {
-        Work<Output, Environment>(
+    ) -> Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>(
             cancellationID: cancellationID,
             operation: operation,
             onError: { error in
@@ -474,23 +463,23 @@ public extension Work {
     /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
     /// - Precondition: The returned work must be a `.task` operation.
     func flatMap<NewOutput>(
-        _ transform: @Sendable @escaping (Output) -> Work<NewOutput, Environment>
-    ) throws(Failure) -> Work<NewOutput, Environment> {
+        _ transform: @Sendable @escaping (Output) -> Work<NewOutput, Environment, CancellationID>
+    ) -> Work<NewOutput, Environment, CancellationID> {
         switch operation {
         case .none:
-            throw Failure.message("Attempting to flatMap a none work unit")
+            preconditionFailure("Attempting to flatMap a none work unit")
 
         case .cancellation:
-            throw Failure.message("Attempting to flatMap a cancellation work unit")
+            preconditionFailure("Attempting to flatMap a cancellation work unit")
 
         case .fireAndForget:
-            throw Failure.message("Attempting to flatMap a fireAndForget work unit")
-            
+            preconditionFailure("Attempting to flatMap a fireAndForget work unit")
+
         case .subscribe:
-            throw Failure.message("Attempting to flat map a subscribe work unit")
+            preconditionFailure("Attempting to flat map a subscribe work unit")
 
         case let .task(priority, work):
-            return Work<NewOutput, Environment>(
+            return Work<NewOutput, Environment, CancellationID>(
                 operation: .task(priority) { env in
                     let newWork = try await transform(work(env))
 
@@ -526,7 +515,9 @@ public extension Work {
     /// - Returns: A new work unit with the cancellation ID attached.
     /// - Note: If work with the same ID is already running, the new work will be dropped
     ///   and a warning will be logged. Cancel existing work first if you want to replace it.
-    func cancellable(id: String) -> Work<Output, Environment> {
+    func cancellable(id: CancellationID) -> Work<Output, Environment, CancellationID> {
         Work(cancellationID: id, operation: operation, onError: onError)
     }
 }
+
+extension Never: Cancellation {}

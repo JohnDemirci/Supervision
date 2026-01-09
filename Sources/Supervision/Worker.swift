@@ -47,9 +47,9 @@ import OSLog
 /// Worker is an `actor`, ensuring all task management is thread-safe.
 /// The `@concurrent` annotation on `perform` methods allows concurrent
 /// task awaiting without blocking the actor.
-actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
+actor Worker<Action: Sendable, Environment: Sendable, CancellationID: Cancellation>: Sendable {
     /// Active tasks indexed by their cancellation ID.
-    var tasks: [String: Task<Action?, Never>]
+    var tasks: [CancellationID: Task<Action?, Never>]
 
     private let logger = Logger(subsystem: "Supervision", category: "Worker<\(Action.self), \(Environment.self)>")
 
@@ -67,7 +67,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// - Parameter taskID: The cancellation ID of the task to cancel.
     ///
     /// If no task exists with the given ID, this method does nothing.
-    func cancel(taskID: String) {
+    func cancel(taskID: CancellationID) {
         tasks[taskID]?.cancel()
         tasks[taskID] = nil
     }
@@ -99,7 +99,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// If work has a cancellation ID that's already in use, the new work is
     /// dropped and a warning is logged. The existing task continues running.
     func run(
-        _ work: Work<Action, Environment>,
+        _ work: Work<Action, Environment, CancellationID>,
         using environment: Environment
     ) async -> Action? {
         switch work.operation {
@@ -149,7 +149,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
                 guard tasks[cancellationID] == nil else {
                     logger.info("""
                     Duplicate cancellationID for Work is received.
-                    A work with the same cancellation ID: \(cancellationID) is already running
+                    A work with the same cancellation ID is already running
                     The oldest is prioritized and the newest will be ignored.
 
                     Please cancel the ongoing task if this priority does not suit your flow 
@@ -191,7 +191,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// - The task is cancelled via `cancel(taskID:)`
     /// - An error occurs (handled via `.catch` or logged)
     func runSubscription(
-        _ work: Work<Action, Environment>,
+        _ work: Work<Action, Environment, CancellationID>,
         using environment: Environment,
         onAction: @MainActor @Sendable @escaping (Action) -> Void
     ) async {
@@ -208,7 +208,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
         guard tasks[cancellationID] == nil else {
             logger.info("""
             Duplicate cancellationID for Subscribe Work received.
-            A work with the same cancellation ID: \(cancellationID) is already running.
+            A work with the same cancellation ID is already running.
             The oldest is prioritized and the newest will be ignored.
 
             Please cancel the ongoing task if this priority does not suit your flow.
