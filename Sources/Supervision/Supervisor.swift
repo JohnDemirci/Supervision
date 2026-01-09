@@ -299,7 +299,7 @@ public extension Supervisor where State: Identifiable {
         dependency: Dependency
     ) {
         self.init(
-            id: ReferenceIdentifier(id: state.id as AnyHashable),
+            id: Self.makeID(from: state.id),
             state: state,
             dependency: dependency
         )
@@ -522,5 +522,11 @@ final class ObservationToken: @unchecked Sendable {
 
     func increment() {
         version += 1
+    }
+}
+
+extension Supervisor where State: Identifiable {
+    static func makeID(from id: State.ID) -> ReferenceIdentifier {
+        ReferenceIdentifier(id, ObjectIdentifier(Feature.self))
     }
 }

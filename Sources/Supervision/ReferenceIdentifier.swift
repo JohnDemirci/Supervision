@@ -56,6 +56,11 @@ public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Senda
         self.id = id
     }
 
+    init(_ ids: AnyHashable...) {
+        precondition(!ids.isEmpty, "ReferenceIdentifier requires at least one ID")
+        self.id = AnyHashable(ids)
+    }
+
     public static func == (lhs: ReferenceIdentifier, rhs: ReferenceIdentifier) -> Bool {
         lhs.id == rhs.id
     }

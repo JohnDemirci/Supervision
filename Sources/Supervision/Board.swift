@@ -56,7 +56,7 @@ extension Board {
         state: Feature.State,
         _ dependencyClosure: @Sendable @escaping (Dependency) -> Feature.Dependency
     ) -> Supervisor<Feature> where Feature.State: Identifiable {
-        getOrCreate(id: ReferenceIdentifier(id: state.id as AnyHashable)) {
+        getOrCreate(id: Supervisor<Feature>.makeID(from: state.id)) {
             Supervisor<Feature>(state: state, dependency: dependencyClosure(dependency))
         }
     }
@@ -75,7 +75,7 @@ extension Board {
         state: Feature.State,
         _ dependencyClosure: @Sendable @escaping (Dependency) -> Feature.Dependency
     ) -> Supervisor<Feature> {
-        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)) {
+        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self))) {
             Supervisor<Feature>(state: state, dependency: dependencyClosure(dependency))
         }
     }
@@ -92,7 +92,7 @@ extension Board {
         type _: Feature.Type = Feature.self,
         state: Feature.State
     ) -> Supervisor<Feature> where Feature.Dependency == Void {
-        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable)) {
+        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self))) {
             Supervisor<Feature>(state: state, dependency: ())
         }
     }
@@ -107,7 +107,7 @@ extension Board {
     public func supervisor<Feature: FeatureProtocol>(
         state: Feature.State
     ) -> Supervisor<Feature> where Feature.Dependency == Void, Feature.State: Identifiable {
-        getOrCreate(id: ReferenceIdentifier(id: state.id as AnyHashable)) {
+        getOrCreate(id: Supervisor<Feature>.makeID(from: state.id)) {
             Supervisor<Feature>(state: state, dependency: ())
         }
     }
