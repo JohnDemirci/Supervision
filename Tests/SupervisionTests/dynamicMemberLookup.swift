@@ -11,6 +11,8 @@ import Testing
 // MARK: - Test Feature
 
 private struct CounterFeature: FeatureProtocol {
+    typealias Dependency = Void
+
     struct State: Equatable {
         var count: Int = 0
         var name: String = "Counter"
@@ -23,7 +25,7 @@ private struct CounterFeature: FeatureProtocol {
         case setName(String)
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         switch action {
         case .increment:
             context.modify(\.count) { $0 += 1 }
@@ -32,7 +34,7 @@ private struct CounterFeature: FeatureProtocol {
         case .setName(let name):
             context.modify(\.name, to: name)
         }
-        return .empty()
+        return .done
     }
 }
 
@@ -86,16 +88,16 @@ struct SupervisorDynamicMemberLookupTests {
         #expect(supervisor.name == "Updated")
     }
 
-    @Test("Dynamic member lookup is equivalent to state access")
+    @Test("Dynamic member lookup returns correct values")
     func equivalentToStateAccess() async throws {
         let supervisor = Supervisor<CounterFeature>(
             state: CounterFeature.State(count: 42, name: "Test", isEnabled: false),
             dependency: ()
         )
 
-        // Dynamic member lookup should equal direct state access
-        #expect(supervisor.count == supervisor.state.count)
-        #expect(supervisor.name == supervisor.state.name)
-        #expect(supervisor.isEnabled == supervisor.state.isEnabled)
+        // Dynamic member lookup should return the correct state values
+        #expect(supervisor.count == 42)
+        #expect(supervisor.name == "Test")
+        #expect(supervisor.isEnabled == false)
     }
 }

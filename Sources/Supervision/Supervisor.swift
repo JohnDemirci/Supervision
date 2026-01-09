@@ -117,34 +117,68 @@ import OSLog
 @dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
+    public typealias CancellationID = Feature.CancellationID
     public typealias Dependency = Feature.Dependency
     public typealias State = Feature.State
-    public typealias CancellationID = Feature.CancellationID
+
+    public let id: ReferenceIdentifier
+
+    let feature: Feature
 
     private nonisolated let logger: Logger
 
     private let actionContinuation: AsyncStream<Work<Action, Dependency, CancellationID>>.Continuation
     private let actionStream: AsyncStream<Work<Action, Dependency, CancellationID>>
     private let dependency: Dependency
-    private let worker: Worker<Action, Dependency, CancellationID>
 
-    private var processingTask: Task<Void, Never>?
+    /*
+     one of the shorcomings of the observation mechanism is that computed properties are not notified when a keypath that they are observing changes.
 
-    private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
+     in oder to address this issue, client needs to provide a map of dependencies for the computed properties where they provide a list of keypaths they want the computed property to be associated to.
+
+     when those provided keypaths mutate, we fire off notification for the computed properties observation token
+     */
     private let observationMap: Feature.ObservationMap
 
-    /// A unique identifier for this supervisor instance.
-    ///
-    /// The ID is used by ``Board`` to cache and retrieve supervisors:
-    ///
-    /// - For `Identifiable` state: derived from `state.id`
-    /// - For non-identifiable state: based on `ObjectIdentifier(Supervisor<Feature>.self)`
-    ///
-    /// This enables efficient supervisor reuse across view updates.
-    public let id: ReferenceIdentifier
+    /*
+     A Seperate entity is responsible for handling async operations
 
-    let feature: Feature
+     I did not want to add too many responsibilities onto Supervisor.
+     Worker is an actor that performs the Side effects and returns the results to the Supervisor
+     */
+    private let worker: Worker<Action, Dependency, CancellationID>
 
+    /*
+     sequentially handling async work
+
+     this is a state management architecture and by design, all async work is done sequentially. There are some exceptions such as FireAndForget.
+     */
+    private var processingTask: Task<Void, Never>?
+
+    /*
+     Observation tokens are reference types that are marcked with the @Observable notation
+     Each keypath of the Supervisor's State contains ObservationToken upon first access via the dynamicMember subscript
+     When a mutation occurs for a particular keypath, the observation token's version is incremented to notify the mutation.
+     This observation mechanism is implemented due to shortcomings of the @Observable macro where @Observable cannot be used on Value types (struct & enum)
+     We could annotate the Supervisor itself as @Observable, but it would fire mutation notifications even when the client is not observing the notifying keypath resulting in excessive SwiftUI re-draws.
+     We could create our own macro similar to TCA's @ObservableState but that would involve having to import SwiftSyntax library as well as the complexity of maintaining the macro not to mention added build times on fresh builds. Therefore i went with this manual implementation where each keypath of a value type has an ObservationToken, technically these tokens are observed but whenever a keypath is modified we increment the token to notify the observer.
+     This achieves per-keypath view re-draw for switftui.
+     */
+    private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
+
+    /*
+     Purpusefully left as private.
+     The observation system works through keypath basis
+     therefore accessing the _state directly does not track/notify observers.
+     Additionally, one of the principles of this architecture is that mutation happens internally (SwiftUI Binding is the exception)
+     The mutations must occure in the FeatureProtocol and the helper APIs from the Context<State> this is done in order to make the mutations of the state more predictable.
+     Access to the _state can happen multiple ways.
+
+     1) Through Context<State> from FeatureProtocol's process function
+        This function is triggered when the client sends an Action to the Supervisor
+     2) dynamicMember subscript
+        Accessing the state through subscript is what triggers the Observation mechanism of this architecture.
+     */
     private var _state: State
 
     // MARK: - Initialization
@@ -154,29 +188,12 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         state: State,
         dependency: Dependency
     ) {
-        self.id = id
-        self.logger = .init(
-            subsystem: "com.Supervision.\(Feature.self)",
-            category: "Supervisor"
-        )
-
-        #if DEBUG
-        let mirror = Mirror(reflecting: state)
-        if mirror.displayStyle != .struct {
-            logger.error(
-                """
-                Warning: State should be a struct (value type).
-                Using reference types (classes) can lead to unexpected behavior.
-                Current State type: \(type(of: state))
-                """
-            )
-        }
-        #endif
-
-        self._state = state
         self.dependency = dependency
-        self.worker = .init()
+        self.worker = Worker()
         self.feature = Feature()
+        self.id = id
+        self.logger = .init(subsystem: "com.Supervision.\(Feature.self)", category: "Supervisor")
+        self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
             of: Work<Action, Dependency, CancellationID>.self,
@@ -202,6 +219,19 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
                 await self.processAsyncWork(work)
             }
         }
+
+        #if DEBUG
+        let mirror = Mirror(reflecting: state)
+        if mirror.displayStyle != .struct {
+            logger.error(
+                """
+                Warning: State should be a struct (value type).
+                Using reference types (classes) can lead to unexpected behavior.
+                Current State type: \(type(of: state))
+                """
+            )
+        }
+        #endif
     }
 
     isolated deinit {
@@ -210,136 +240,30 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         processingTask = nil
     }
 
-    // MARK: - Granular Observation Infrastructure
+    /*
+     this is the public public which consumers of this architecture use to access the state amd enable observation.
 
-    @inline(__always)
-    private func token(for keyPath: PartialKeyPath<State>) -> ObservationToken {
-        if let existing = _observationTokens[keyPath] {
-            return existing
-        }
-        let newToken = ObservationToken()
-        _observationTokens[keyPath] = newToken
-        return newToken
-    }
+     trackAccess(for: keyPath) function references a class annotated with the @Observable macro
 
-    @inline(__always)
-    private func trackAccess<Value>(for keyPath: KeyPath<State, Value>) {
-        _ = token(for: keyPath).version
-    }
+     when a swiftui view is accessing the keypath, the observvation machinery in swiftui and the observation framework sees that there's an interaction with an @Observable class, in this case, it is the ObservationToken.
 
-    @inline(__always)
-    private func notifyChange(for keyPath: PartialKeyPath<State>) {
-        _observationTokens[keyPath]?.increment()
+     _ = token(for: keyPath).version
 
-        if let computedPropertyKeypaths = observationMap[keyPath] {
-            computedPropertyKeypaths.forEach { computedPropertyKeypath in
-                _observationTokens[computedPropertyKeypath]?.increment()
-            }
-        }
-    }
+     when swiftui's body re-evaluate, it checks if the version number corresponding to the keypath changes.
 
+     in a way the current implementation is similar to doing something like this
+
+     withObservationTracking {
+         _ = token(for: keyPath).version
+     } onChange: {
+         ...
+     }
+
+     because that particular keypath is associated with the observation token, the mutation notifications for the keypath will cause the re-render
+     */
     public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
         trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
-    }
-
-    /// Dispatches an action to the feature for processing.
-    ///
-    /// This is the primary way to trigger state changes and side effects. The action
-    /// flows through your feature's `process(action:context:)` method synchronously,
-    /// and any returned ``Work`` is scheduled for async execution.
-    ///
-    /// ```swift
-    /// // Simple action dispatch
-    /// supervisor.send(.increment)
-    ///
-    /// // Action with associated value
-    /// supervisor.send(.userNameChanged("John"))
-    /// ```
-    ///
-    /// ## Processing Flow
-    ///
-    /// 1. Action is passed to `feature.process(action:context:)`
-    /// 2. Feature mutates state via `context.state`
-    /// 3. Feature returns ``Work`` describing side effects
-    /// 4. Work is executed:
-    ///    - `.empty()`: No action taken
-    ///    - `.cancel(id)`: Cancels running work with that ID
-    ///    - `.run { }`: Queued for async execution
-    ///    - `.fireAndForget { }`: Executed without awaiting result
-     ///
-    /// ## State Updates
-    ///
-    /// State mutations in `process()` are applied **synchronously** before `send()` returns.
-    /// This ensures UI updates immediately reflect the new state:
-    ///
-    /// ```swift
-    /// supervisor.send(.increment)
-    /// // supervisor.count is already updated here
-    /// ```
-    ///
-    /// ## Async Work
-    ///
-    /// Work returned from `process()` is executed asynchronously. When work completes
-    /// with an action, that action is automatically dispatched via `send()`:
-    ///
-    /// ```swift
-    /// case .fetchUsers:
-    ///     return .run { env in
-    ///         let users = try await env.api.fetchUsers()
-    ///         return .usersLoaded(users)  // This action is sent automatically
-    ///     }
-    /// ```
-    ///
-    /// - Parameter action: The action to dispatch.
-    public func send(_ action: Action) {
-        // Note: [weak self] is not needed here because this closure is non-escaping.
-        // Although Context stores an @escaping closure (mutateFn), the Context itself
-        // is borrowed (not stored) by feature.process() and is deallocated when this
-        // method returns. The strong capture of self is scoped to this synchronous call.
-        let work: Work<Action, Dependency, CancellationID> = withUnsafeMutablePointer(to: &_state) { [self] pointer in
-            let context = Context<Feature.State>(
-                mutateFn: { @MainActor mutation in
-                    mutation.apply(&pointer.pointee)
-                    self.notifyChange(for: mutation.keyPath)
-
-                    #if DEBUG
-                    self.logger.debug("\(mutation.keyPath.debugDescription) has changed")
-                    #endif
-                },
-                statePointer: UnsafePointer(pointer)
-            )
-
-            return self.feature.process(action: action, context: context)
-        }
-
-        switch work.operation {
-        case .none:
-            return
-        case let .cancellation(id):
-            Task { await self.worker.cancel(taskID: id) }
-        case .task, .fireAndForget, .subscribe:
-            actionContinuation.yield(work)
-        }
-    }
-
-    /// Applies a mutation directly to the state for a specific keyPath.
-    /// Used internally by `directBinding` for direct state mutations.
-    func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
-        _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
-    }
-
-    /// Applies a mutation directly with Equatable check.
-    /// Returns true if the mutation was applied (value changed), false otherwise.
-    @discardableResult
-    func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
-        let currentValue = _state[keyPath: keyPath]
-        guard currentValue != value else { return false }
-
-        _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
-        return true
     }
 }
 
@@ -423,7 +347,124 @@ public extension Supervisor {
     }
 }
 
+// MARK: - Observation
+
 extension Supervisor {
+    @inline(__always)
+    private func token(for keyPath: PartialKeyPath<State>) -> ObservationToken {
+        if let existing = _observationTokens[keyPath] {
+            return existing
+        }
+        let newToken = ObservationToken()
+        _observationTokens[keyPath] = newToken
+        return newToken
+    }
+
+    @inline(__always)
+    private func trackAccess<Value>(for keyPath: KeyPath<State, Value>) {
+        _ = token(for: keyPath).version
+    }
+
+    @inline(__always)
+    private func notifyChange(for keyPath: PartialKeyPath<State>) {
+        _observationTokens[keyPath]?.increment()
+
+        if let computedPropertyKeypaths = observationMap[keyPath] {
+            computedPropertyKeypaths.forEach { computedPropertyKeypath in
+                _observationTokens[computedPropertyKeypath]?.increment()
+            }
+        }
+    }
+}
+
+extension Supervisor {
+    /// Dispatches an action to the feature for processing.
+    ///
+    /// This is the primary way to trigger state changes and side effects. The action
+    /// flows through your feature's `process(action:context:)` method synchronously,
+    /// and any returned ``Work`` is scheduled for async execution.
+    ///
+    /// ```swift
+    /// // Simple action dispatch
+    /// supervisor.send(.increment)
+    ///
+    /// // Action with associated value
+    /// supervisor.send(.userNameChanged("John"))
+    /// ```
+    ///
+    /// ## Processing Flow
+    ///
+    /// 1. Action is passed to `feature.process(action:context:)`
+    /// 2. Feature mutates state via `context.state`
+    /// 3. Feature returns ``Work`` describing side effects
+    /// 4. Work is executed:
+    ///    - `.empty()`: No action taken
+    ///    - `.cancel(id)`: Cancels running work with that ID
+    ///    - `.run { }`: Queued for async execution
+    ///    - `.fireAndForget { }`: Executed without awaiting result
+     ///
+    /// ## State Updates
+    ///
+    /// State mutations in `process()` are applied **synchronously** before `send()` returns.
+    /// This ensures UI updates immediately reflect the new state:
+    ///
+    /// ```swift
+    /// supervisor.send(.increment)
+    /// // supervisor.count is already updated here
+    /// ```
+    ///
+    /// ## Async Work
+    ///
+    /// Work returned from `process()` is executed asynchronously. When work completes
+    /// with an action, that action is automatically dispatched via `send()`:
+    ///
+    /// ```swift
+    /// case .fetchUsers:
+    ///     return .run { env in
+    ///         let users = try await env.api.fetchUsers()
+    ///         return .usersLoaded(users)  // This action is sent automatically
+    ///     }
+    /// ```
+    ///
+    /// - Parameter action: The action to dispatch.
+    public func send(_ action: Action) {
+        // Note: [weak self] is not needed here because this closure is non-escaping.
+        // Although Context stores an @escaping closure (mutateFn), the Context itself
+        // is borrowed (not stored) by feature.process() and is deallocated when this
+        // method returns. The strong capture of self is scoped to this synchronous call.
+
+        /*
+         Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
+         Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
+         */
+        let work: Work<Action, Dependency, CancellationID> = withUnsafeMutablePointer(
+            to: &_state
+        ) { [self] pointer in
+            let context = Context<Feature.State>(
+                mutateFn: { @MainActor mutation in
+                    mutation.apply(&pointer.pointee)
+                    self.notifyChange(for: mutation.keyPath)
+
+                    #if DEBUG
+                    self.logger.debug("\(mutation.keyPath.debugDescription) has changed")
+                    #endif
+                },
+                statePointer: UnsafePointer(pointer)
+            )
+
+            return self.feature.process(action: action, context: context)
+        }
+
+        switch work.operation {
+        case .none:
+            return
+        case let .cancellation(id):
+            Task { await self.worker.cancel(taskID: id) }
+        case .task, .fireAndForget, .subscribe:
+            actionContinuation.yield(work)
+        }
+    }
+
     private func processAsyncWork(_ work: Work<Action, Dependency, CancellationID>) async {
         switch work.operation {
         case .none:
@@ -451,6 +492,27 @@ extension Supervisor {
                 }
             )
         }
+    }
+}
+
+// MARK: - Supervisor + Direct Binding
+
+extension Supervisor {
+    /// Applies a mutation directly to the state for a specific keyPath.
+    /// Used internally by `directBinding` for direct state mutations.
+    func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
+        _state[keyPath: keyPath] = value
+        notifyChange(for: keyPath)
+    }
+
+    @discardableResult
+    func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
+        let currentValue = _state[keyPath: keyPath]
+        guard currentValue != value else { return false }
+
+        _state[keyPath: keyPath] = value
+        notifyChange(for: keyPath)
+        return true
     }
 }
 

@@ -125,19 +125,10 @@ public struct Work<Output, Environment, CancellationID: Cancellation>: Sendable 
 // MARK: - Factory Methods
 
 public extension Work {
-    /// Creates an empty work unit that performs no operation.
-    ///
-    /// Use this when an action requires no side effects:
-    ///
-    /// ```swift
-    /// case .incrementButtonTapped:
-    ///     context.state.count += 1
-    ///     return .empty()
-    /// ```
-    ///
-    /// - Returns: A work unit with no operation.
-    static func empty<O, E>() -> Work<O, E, Never> {
-        Work<O, E, Never>(operation: .none)
+    /// Indicates there are no further actions.
+    /// Use this when there is no async operation to be done.
+    static var done: Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>.init(operation: .none)
     }
 
     /// Creates a work unit that cancels a previously started task.
@@ -178,8 +169,8 @@ public extension Work {
     static func fireAndForget(
         priority: TaskPriority? = nil,
         _ body: @Sendable @escaping (Environment) async throws -> Void
-    ) -> Work<Output, Environment, Never> {
-        Work<Output, Environment, Never>(
+    ) -> Work<Output, Environment, CancellationID> {
+        Work<Output, Environment, CancellationID>(
             operation: .fireAndForget(priority, body)
         )
     }

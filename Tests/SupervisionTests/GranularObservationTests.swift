@@ -42,7 +42,7 @@ struct ObservationTestFeature: FeatureProtocol {
         case multiPropertyUpdate(count: Int, name: String, isEnabled: Bool)
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         switch action {
         case .incrementCount:
             context.modify(\.count) { $0 += 1 }
@@ -79,7 +79,7 @@ struct ObservationTestFeature: FeatureProtocol {
             context.modify(\.name, to: name)
             context.modify(\.isEnabled, to: isEnabled)
         }
-        return .empty()
+        return .done
     }
 }
 
@@ -128,9 +128,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             // Set to same value - should not trigger
@@ -149,9 +149,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.count, to: 100)
@@ -187,9 +187,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.user.firstName, to: "John")
@@ -238,9 +238,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.items) { $0.append("c") }
@@ -259,9 +259,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.items, to: ["a", "b"])
@@ -281,9 +281,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             // Closure that results in same value
@@ -305,9 +305,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.count) { count in
@@ -392,9 +392,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.name, to: "")
@@ -412,9 +412,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.count, to: 0)
@@ -432,9 +432,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.isEnabled, to: false)
@@ -452,9 +452,9 @@ struct GranularObservationTests {
             let context = Context<ObservationTestFeature.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.isEnabled, to: true)

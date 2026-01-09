@@ -43,7 +43,7 @@ struct FootballClubFeature: FeatureProtocol {
         case fetchPlayersResult(Result<[String], Error>)
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency>  {
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency, CancellationID>  {
         switch action {
         case .playGame:
             return .fireAndForget {
@@ -58,7 +58,9 @@ struct FootballClubFeature: FeatureProtocol {
             case .failure:
                 break
             }
-            return .empty()
+
+            return .done
+
         case .fetchPlayers:
             return .run { env in
                 try await env.fetchPlayers(delay: .seconds(1), result: .success(["john"]))
@@ -70,9 +72,9 @@ struct FootballClubFeature: FeatureProtocol {
             switch result {
             case .success(let values):
                 context.modify(\.playerNames, to: values)
-                return .empty()
+                return .done
             case .failure:
-                return .empty()
+                return .done
             }
         }
     }

@@ -118,6 +118,8 @@ import Foundation
 /// processing occur on the main thread.
 @MainActor
 public protocol FeatureProtocol {
+    typealias FeatureWork = Work<Action, Dependency, CancellationID>
+
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
     /// A type used to identify and manage cancellable side effects.
@@ -157,10 +159,6 @@ public protocol FeatureProtocol {
     ///     // ...
     /// }
     /// ```
-    ///
-    /// ## Best Practices
-    ///
-    /// - Use descriptive names that indicate what operation is being cancelled
     ///
     /// - Note: Cancellation IDs must conform to `Hashable` and `Sendable` to safely
     ///   identify work across actor boundaries.
@@ -240,7 +238,7 @@ public protocol FeatureProtocol {
     /// - Values are arrays of keypaths to the stored properties they depend on
     /// - Only include computed properties that are actually observed in your UI
     /// - Computed properties that don't depend on stored properties should be moved
-    ///   to view logic or helpers outside of `State`
+    ///   to view logic or helpers outside of `State` or `Supervisor`
     ///
     /// - Note: This is required for the observation system to correctly track changes
     ///   to computed properties. Without it, SwiftUI views observing computed properties
@@ -312,7 +310,7 @@ public protocol FeatureProtocol {
     ///
     /// - Note: The context is `borrowing` to prevent escaping. State mutations
     ///   are synchronous and complete before this method returns.
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency, CancellationID>
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork
 
     /// Creates a new instance of the feature.
     ///

@@ -43,8 +43,8 @@ struct WorkerRunOperationTests {
 
     @Test("run with .none operation returns nil")
     func runWithNoneReturnsNil() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
-        let work: Work<TestAction, TestEnvironment> = .empty()
+        let worker = Worker<TestAction, TestEnvironment, String>()
+        let work: Work<TestAction, TestEnvironment, String> = .done
         let env = TestEnvironment()
 
         let result = await worker.run(work, using: env)
@@ -54,12 +54,12 @@ struct WorkerRunOperationTests {
 
     @Test("run with .cancellation operation cancels task and returns nil")
     func runWithCancellationReturnsNil() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         // First, start a long-running task with a cancellation ID
         let startedSignal = SendableBox(value: false)
-        let longRunningWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let longRunningWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             try await Task.sleep(for: .seconds(10))
             return .completed
@@ -76,7 +76,7 @@ struct WorkerRunOperationTests {
         }
 
         // Now run cancellation work
-        let cancellationWork: Work<TestAction, TestEnvironment> = .cancel("task-to-cancel")
+        let cancellationWork: Work<TestAction, TestEnvironment, String> = .cancel("task-to-cancel")
         let result = await worker.run(cancellationWork, using: env)
 
         #expect(result == nil)
@@ -88,11 +88,11 @@ struct WorkerRunOperationTests {
 
     @Test("run with .fireAndForget executes operation and returns nil immediately")
     func runWithFireAndForgetReturnsNilImmediately() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let executedBox = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget { _ in
             try await Task.sleep(for: .milliseconds(50))
             executedBox.value = true
         }
@@ -112,10 +112,10 @@ struct WorkerRunOperationTests {
 
     @Test("run with .task executes and returns resulting action")
     func runWithTaskReturnsAction() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment(value: 100)
 
-        let work: Work<TestAction, TestEnvironment> = .run { environment in
+        let work: Work<TestAction, TestEnvironment, String> = .run { environment in
             return .loaded(environment.value * 2)
         }
 
@@ -126,10 +126,10 @@ struct WorkerRunOperationTests {
 
     @Test("run with .task uses environment correctly")
     func runWithTaskUsesEnvironment() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment(value: 7)
 
-        let work: Work<TestAction, TestEnvironment> = .run { environment in
+        let work: Work<TestAction, TestEnvironment, String> = .run { environment in
             return .loaded(environment.value)
         }
 
@@ -146,10 +146,10 @@ struct WorkerErrorHandlingTests {
 
     @Test("task that throws without error handler returns nil")
     func throwingTaskWithoutHandlerReturnsNil() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw TestError("Something went wrong")
         }
 
@@ -161,10 +161,10 @@ struct WorkerErrorHandlingTests {
 
     @Test("task that throws with .catch handler returns action from handler")
     func throwingTaskWithCatchReturnsHandlerAction() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw TestError("Network failure")
         }.catch { error in
             return .failed(error.localizedDescription)
@@ -177,10 +177,10 @@ struct WorkerErrorHandlingTests {
 
     @Test("successful task with .catch handler returns normal result")
     func successfulTaskWithCatchReturnsNormalResult() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.catch { _ in
             return .failed("should not be called")
@@ -193,11 +193,11 @@ struct WorkerErrorHandlingTests {
 
     @Test("error handler receives the thrown error")
     func errorHandlerReceivesCorrectError() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let capturedMessageBox = SendableBox<String?>(value: nil)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw TestError("Specific error message")
         }.catch { error in
             capturedMessageBox.value = error.localizedDescription
@@ -211,11 +211,11 @@ struct WorkerErrorHandlingTests {
 
     @Test("fireAndForget that throws logs error but continues")
     func fireAndForgetThrowingLogsError() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let threwBox = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget { _ in
             threwBox.value = true
             throw TestError("Fire and forget error")
         }
@@ -237,12 +237,12 @@ struct WorkerCancellationTests {
 
     @Test("cancel(taskID:) cancels a specific running task")
     func cancelSpecificTask() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let startedSignal = SendableBox(value: false)
         let cancelledBox = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             do {
                 try await Task.sleep(for: .seconds(10))
@@ -277,7 +277,7 @@ struct WorkerCancellationTests {
 
     @Test("cancel(taskID:) with non-existent ID does nothing")
     func cancelNonExistentTask() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
 
         // This should not crash or throw
         await worker.cancel(taskID: "non-existent-id")
@@ -288,7 +288,7 @@ struct WorkerCancellationTests {
 
     @Test("cancelAll() cancels all tracked tasks")
     func cancelAllTasks() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         let started1 = SendableBox(value: false)
@@ -296,7 +296,7 @@ struct WorkerCancellationTests {
         let cancelled1 = SendableBox(value: false)
         let cancelled2 = SendableBox(value: false)
 
-        let work1: Work<TestAction, TestEnvironment> = .run { _ in
+        let work1: Work<TestAction, TestEnvironment, String> = .run { _ in
             started1.value = true
             do {
                 try await Task.sleep(for: .seconds(10))
@@ -307,7 +307,7 @@ struct WorkerCancellationTests {
             }
         }.cancellable(id: "task-1")
 
-        let work2: Work<TestAction, TestEnvironment> = .run { _ in
+        let work2: Work<TestAction, TestEnvironment, String> = .run { _ in
             started2.value = true
             do {
                 try await Task.sleep(for: .seconds(10))
@@ -346,12 +346,12 @@ struct WorkerCancellationTests {
 
     @Test("cancelled task responds to cancellation")
     func cancelledTaskRespondsToCheckpoints() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let iterationsBox = SendableBox(value: 0)
         let startedSignal = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             for i in 0..<100 {
                 try Task.checkCancellation()
@@ -394,19 +394,19 @@ struct WorkerDuplicateCancellationIDTests {
 
     @Test("work with same cancellation ID is dropped when already running")
     func duplicateCancellationIDDropsNewWork() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         let firstStarted = SendableBox(value: false)
         let secondExecuted = SendableBox(value: false)
 
-        let firstWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let firstWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             firstStarted.value = true
             try await Task.sleep(for: .seconds(2))
             return .loaded(1)
         }.cancellable(id: "shared-id")
 
-        let secondWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let secondWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             secondExecuted.value = true
             return .loaded(2)
         }.cancellable(id: "shared-id")
@@ -433,20 +433,20 @@ struct WorkerDuplicateCancellationIDTests {
 
     @Test("existing task continues running when duplicate is dropped")
     func existingTaskContinuesWhenDuplicateDropped() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         let firstCompleted = SendableBox(value: false)
         let firstStarted = SendableBox(value: false)
 
-        let firstWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let firstWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             firstStarted.value = true
             try await Task.sleep(for: .milliseconds(100))
             firstCompleted.value = true
             return .loaded(1)
         }.cancellable(id: "shared-id")
 
-        let secondWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let secondWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .loaded(2)
         }.cancellable(id: "shared-id")
 
@@ -472,14 +472,14 @@ struct WorkerDuplicateCancellationIDTests {
 
     @Test("same ID can be reused after task completes")
     func sameIDCanBeReusedAfterCompletion() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let firstWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let firstWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .loaded(1)
         }.cancellable(id: "reusable-id")
 
-        let secondWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let secondWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .loaded(2)
         }.cancellable(id: "reusable-id")
 
@@ -494,12 +494,12 @@ struct WorkerDuplicateCancellationIDTests {
 
     @Test("same ID can be reused after task is cancelled")
     func sameIDCanBeReusedAfterCancellation() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         let firstStarted = SendableBox(value: false)
 
-        let firstWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let firstWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             firstStarted.value = true
             try await Task.sleep(for: .seconds(10))
             return .loaded(1)
@@ -522,7 +522,7 @@ struct WorkerDuplicateCancellationIDTests {
         try await Task.sleep(for: .milliseconds(50))
 
         // Now run new work with same ID - should succeed
-        let secondWork: Work<TestAction, TestEnvironment> = .run { _ in
+        let secondWork: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .loaded(2)
         }.cancellable(id: "cancelled-id")
 
@@ -538,12 +538,12 @@ struct WorkerTaskLifecycleTests {
 
     @Test("task is tracked while running")
     func taskIsTrackedWhileRunning() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let startedSignal = SendableBox(value: false)
         let continueSignal = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             // Wait for signal to continue
             while !continueSignal.value {
@@ -575,10 +575,10 @@ struct WorkerTaskLifecycleTests {
 
     @Test("task is removed from tracking after completion")
     func taskIsRemovedAfterCompletion() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.cancellable(id: "completing-task")
 
@@ -595,10 +595,10 @@ struct WorkerTaskLifecycleTests {
 
     @Test("task is removed from tracking after error")
     func taskIsRemovedAfterError() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw TestError("Task error")
         }.cancellable(id: "erroring-task")
 
@@ -612,12 +612,12 @@ struct WorkerTaskLifecycleTests {
 
     @Test("task without cancellation ID is not tracked")
     func taskWithoutCancellationIDNotTracked() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let startedSignal = SendableBox(value: false)
         let continueSignal = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             while !continueSignal.value {
                 try await Task.sleep(for: .milliseconds(10))
@@ -646,7 +646,7 @@ struct WorkerTaskLifecycleTests {
 
     @Test("multiple tasks can be tracked simultaneously")
     func multipleTasksTrackedSimultaneously() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
         let started1 = SendableBox(value: false)
@@ -654,7 +654,7 @@ struct WorkerTaskLifecycleTests {
         let started3 = SendableBox(value: false)
         let continueSignal = SendableBox(value: false)
 
-        let work1: Work<TestAction, TestEnvironment> = .run { _ in
+        let work1: Work<TestAction, TestEnvironment, String> = .run { _ in
             started1.value = true
             while !continueSignal.value {
                 try await Task.sleep(for: .milliseconds(10))
@@ -662,7 +662,7 @@ struct WorkerTaskLifecycleTests {
             return .loaded(1)
         }.cancellable(id: "task-1")
 
-        let work2: Work<TestAction, TestEnvironment> = .run { _ in
+        let work2: Work<TestAction, TestEnvironment, String> = .run { _ in
             started2.value = true
             while !continueSignal.value {
                 try await Task.sleep(for: .milliseconds(10))
@@ -670,7 +670,7 @@ struct WorkerTaskLifecycleTests {
             return .loaded(2)
         }.cancellable(id: "task-2")
 
-        let work3: Work<TestAction, TestEnvironment> = .run { _ in
+        let work3: Work<TestAction, TestEnvironment, String> = .run { _ in
             started3.value = true
             while !continueSignal.value {
                 try await Task.sleep(for: .milliseconds(10))
@@ -704,11 +704,11 @@ struct WorkerTaskPriorityTests {
 
     @Test("task respects specified priority")
     func taskRespectsSpecifiedPriority() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let capturedPriorityBox = SendableBox<TaskPriority?>(value: nil)
 
-        let work: Work<TestAction, TestEnvironment> = .run(priority: .high) { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run(priority: .high) { _ in
             capturedPriorityBox.value = Task.currentPriority
             return .completed
         }
@@ -720,12 +720,12 @@ struct WorkerTaskPriorityTests {
 
     @Test("fireAndForget respects specified priority")
     func fireAndForgetRespectsSpecifiedPriority() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let capturedPriorityBox = SendableBox<TaskPriority?>(value: nil)
         let completedBox = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget(priority: .low) { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget(priority: .low) { _ in
             capturedPriorityBox.value = Task.currentPriority
             completedBox.value = true
         }
@@ -748,10 +748,10 @@ struct WorkerEdgeCaseTests {
 
     @Test("empty cancellation ID works correctly")
     func emptyCancellationIDWorks() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.cancellable(id: "")
 
@@ -762,11 +762,11 @@ struct WorkerEdgeCaseTests {
 
     @Test("cancelling with empty ID works")
     func cancellingWithEmptyIDWorks() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let startedSignal = SendableBox(value: false)
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             startedSignal.value = true
             try await Task.sleep(for: .seconds(10))
             return .completed
@@ -791,7 +791,7 @@ struct WorkerEdgeCaseTests {
 
     @Test("running many concurrent tasks works correctly")
     func manyConcurrentTasksWork() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
         let completedCount = SendableBox(value: 0)
 
@@ -799,7 +799,7 @@ struct WorkerEdgeCaseTests {
         var tasks: [Task<TestAction?, Never>] = []
 
         for i in 0..<taskCount {
-            let work: Work<TestAction, TestEnvironment> = .run { _ in
+            let work: Work<TestAction, TestEnvironment, String> = .run { _ in
                 completedCount.value += 1
                 return .loaded(i)
             }.cancellable(id: "task-\(i)")
@@ -823,10 +823,10 @@ struct WorkerEdgeCaseTests {
 
     @Test("task completing with error still cleans up properly")
     func errorCleanupWorks() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw TestError("Cleanup test error")
         }.cancellable(id: "error-cleanup-task")
 
@@ -836,7 +836,7 @@ struct WorkerEdgeCaseTests {
         #expect(taskCount == 0)
 
         // Should be able to reuse the ID
-        let work2: Work<TestAction, TestEnvironment> = .run { _ in
+        let work2: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.cancellable(id: "error-cleanup-task")
 
@@ -846,10 +846,10 @@ struct WorkerEdgeCaseTests {
 
     @Test("CancellationError in task returns nil")
     func cancellationErrorReturnsNil() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw CancellationError()
         }
 
@@ -860,10 +860,10 @@ struct WorkerEdgeCaseTests {
 
     @Test("CancellationError with catch handler calls handler")
     func cancellationErrorWithCatchCallsHandler() async throws {
-        let worker = Worker<TestAction, TestEnvironment>()
+        let worker = Worker<TestAction, TestEnvironment, String>()
         let env = TestEnvironment()
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw CancellationError()
         }.catch { _ in
             return .cancelled

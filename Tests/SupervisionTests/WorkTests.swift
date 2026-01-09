@@ -9,6 +9,8 @@
 import Testing
 import Foundation
 
+extension String: Cancellation {}
+
 // MARK: - Test Environment
 
 private struct TestEnvironment: Sendable {
@@ -34,7 +36,7 @@ struct WorkFactoryTests {
 
     @Test("empty() creates a none operation")
     func emptyCreatesNoneOperation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .empty()
+        let work: Work<TestAction, TestEnvironment, String> = .done
 
         switch work.operation {
         case .none:
@@ -51,7 +53,7 @@ struct WorkFactoryTests {
     @Test("cancel(_:) creates a cancellation operation with correct ID")
     func cancelCreatesCorrectOperation() async throws {
         let cancellationID = "test-cancellation-id"
-        let work: Work<TestAction, TestEnvironment> = .cancel(cancellationID)
+        let work: Work<TestAction, TestEnvironment, String> = .cancel(cancellationID)
 
         switch work.operation {
         case .cancellation(let id):
@@ -60,14 +62,14 @@ struct WorkFactoryTests {
             Issue.record("Expected .cancellation operation but got different type")
         }
 
-        // The work's cancellationID property should be nil (it's not a cancellable work, it IS a cancellation)
-        #expect(work.cancellationID == nil)
+        // The work's cancellationID property is set to the ID being cancelled
+        #expect(work.cancellationID == cancellationID)
         #expect(work.onError == nil)
     }
 
     @Test("cancel(_:) with empty string ID")
     func cancelWithEmptyID() async throws {
-        let work: Work<TestAction, TestEnvironment> = .cancel("")
+        let work: Work<TestAction, TestEnvironment, String> = .cancel("")
 
         switch work.operation {
         case .cancellation(let id):
@@ -80,7 +82,7 @@ struct WorkFactoryTests {
     @Test("fireAndForget creates correct operation type")
     func fireAndForgetCreatesCorrectOperation() async throws {
         let executedBox = SendableBox(value: false)
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget { _ in
             executedBox.value = true
         }
 
@@ -100,7 +102,7 @@ struct WorkFactoryTests {
 
     @Test("fireAndForget with custom priority")
     func fireAndForgetWithPriority() async throws {
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget(priority: .high) { _ in }
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget(priority: .high) { _ in }
 
         switch work.operation {
         case .fireAndForget(let priority, _):
@@ -113,7 +115,7 @@ struct WorkFactoryTests {
     @Test("fireAndForget can access environment")
     func fireAndForgetAccessesEnvironment() async throws {
         let capturedValueBox = SendableBox<Int?>(value: nil)
-        let work: Work<TestAction, TestEnvironment> = .fireAndForget { env in
+        let work: Work<TestAction, TestEnvironment, String> = .fireAndForget { env in
             capturedValueBox.value = env.value
         }
 
@@ -128,7 +130,7 @@ struct WorkFactoryTests {
 
     @Test("run creates correct operation type")
     func runCreatesCorrectOperation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { env in
+        let work: Work<TestAction, TestEnvironment, String> = .run { env in
             return .loaded(env.value)
         }
 
@@ -147,7 +149,7 @@ struct WorkFactoryTests {
 
     @Test("run with custom priority")
     func runWithPriority() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run(priority: .low) { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run(priority: .low) { _ in
             return .completed
         }
 
@@ -161,7 +163,7 @@ struct WorkFactoryTests {
 
     @Test("run(_:toAction:) handles success result")
     func runToActionHandlesSuccess() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { env in
+        let work: Work<TestAction, TestEnvironment, String> = .run { env in
             return env.value * 2
         } toAction: { result in
             switch result {
@@ -188,7 +190,7 @@ struct WorkFactoryTests {
             var description: String { message }
         }
 
-        let work: Work<TestAction, TestEnvironment> = .run { (_: TestEnvironment) -> Int in
+        let work: Work<TestAction, TestEnvironment, String> = .run { (_: TestEnvironment) -> Int in
             throw TestError(message: "Something went wrong")
         } toAction: { result in
             switch result {
@@ -211,7 +213,7 @@ struct WorkFactoryTests {
 
     @Test("run(_:toAction:) with custom priority")
     func runToActionWithPriority() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run(priority: .userInitiated) { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run(priority: .userInitiated) { _ in
             return 10
         } toAction: { result in
             switch result {
@@ -241,7 +243,7 @@ struct WorkFactoryTests {
         }
 
         // Success case
-        let successWork: Work<Action, TestEnvironment> = .run { _ in
+        let successWork: Work<Action, TestEnvironment, String> = .run { _ in
             return 42
         } toAction: { result in
             switch result {
@@ -270,7 +272,7 @@ struct WorkTransformationTests {
 
     @Test("map transforms output correctly")
     func mapTransformsOutput() async throws {
-        let work: Work<Int, TestEnvironment> = .run { env in
+        let work: Work<Int, TestEnvironment, String> = .run { env in
             return env.value
         }
 
@@ -289,7 +291,7 @@ struct WorkTransformationTests {
 
     @Test("map preserves cancellation ID")
     func mapPreservesCancellationID() async throws {
-        let work: Work<Int, TestEnvironment> = .run { _ in
+        let work: Work<Int, TestEnvironment, String> = .run { _ in
             return 42
         }.cancellable(id: "test-id")
 
@@ -302,12 +304,12 @@ struct WorkTransformationTests {
 
     @Test("flatMap chains work correctly")
     func flatMapChainsWork() async throws {
-        let work: Work<Int, TestEnvironment> = .run { env in
+        let work: Work<Int, TestEnvironment, String> = .run { env in
             return env.value
         }
 
-        let flatMappedWork = try work.flatMap { value in
-            Work<TestAction, TestEnvironment>.run { _ in
+        let flatMappedWork = work.flatMap { value in
+            Work<TestAction, TestEnvironment, String>.run { _ in
                 return .loaded(value * 3)
             }
         }
@@ -323,12 +325,12 @@ struct WorkTransformationTests {
 
     @Test("flatMap preserves priority from original work")
     func flatMapPreservesPriority() async throws {
-        let work: Work<Int, TestEnvironment> = .run(priority: .background) { _ in
+        let work: Work<Int, TestEnvironment, String> = .run(priority: .background) { _ in
             return 42
         }
 
-        let flatMappedWork = try work.flatMap { value in
-            Work<TestAction, TestEnvironment>.run { _ in
+        let flatMappedWork = work.flatMap { value in
+            Work<TestAction, TestEnvironment, String>.run { _ in
                 return .loaded(value)
             }
         }
@@ -343,7 +345,7 @@ struct WorkTransformationTests {
 
     @Test("catch attaches error handler")
     func catchAttachesErrorHandler() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.catch { error in
             return .failed(String(describing: error))
@@ -364,7 +366,7 @@ struct WorkTransformationTests {
 
     @Test("catch preserves operation")
     func catchPreservesOperation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.catch { _ in
             return .failed("error")
@@ -381,7 +383,7 @@ struct WorkTransformationTests {
 
     @Test("catch preserves cancellation ID")
     func catchPreservesCancellationID() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }
         .cancellable(id: "my-task")
@@ -394,7 +396,7 @@ struct WorkTransformationTests {
 
     @Test("catch can be chained")
     func catchCanBeChained() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }
         .catch { _ in
@@ -422,7 +424,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable(id:) attaches the ID correctly")
     func cancellableAttachesID() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.cancellable(id: "my-unique-id")
 
@@ -431,7 +433,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable preserves operation")
     func cancellablePreservesOperation() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .loaded(42)
         }.cancellable(id: "test-id")
 
@@ -446,7 +448,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable preserves error handler")
     func cancellablePreservesErrorHandler() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }
         .catch { _ in
@@ -466,7 +468,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable can be called on empty work")
     func cancellableOnEmpty() async throws {
-        let work: Work<TestAction, TestEnvironment> = Work<TestAction, TestEnvironment>.empty()
+        let work: Work<TestAction, TestEnvironment, String> = Work<TestAction, TestEnvironment, String>.done
             .cancellable(id: "empty-id")
 
         #expect(work.cancellationID == "empty-id")
@@ -481,7 +483,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable can be called on fireAndForget work")
     func cancellableOnFireAndForget() async throws {
-        let work: Work<TestAction, TestEnvironment> = Work<TestAction, TestEnvironment>.fireAndForget { _ in }
+        let work: Work<TestAction, TestEnvironment, String> = Work<TestAction, TestEnvironment, String>.fireAndForget { _ in }
             .cancellable(id: "fire-id")
 
         #expect(work.cancellationID == "fire-id")
@@ -496,7 +498,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable ID can be overwritten")
     func cancellableIDCanBeOverwritten() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }
         .cancellable(id: "first-id")
@@ -507,7 +509,7 @@ struct WorkCancellableTests {
 
     @Test("cancellable with empty string ID")
     func cancellableWithEmptyID() async throws {
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             return .completed
         }.cancellable(id: "")
 
@@ -516,58 +518,16 @@ struct WorkCancellableTests {
 }
 
 // MARK: - Failure Type Tests
-
-@Suite("Work Failure Type")
-struct WorkFailureTests {
-
-    @Test("Failure error message is correct")
-    func failureErrorMessage() async throws {
-        let failure = Work<TestAction, TestEnvironment>.Failure.message("Test error message")
-
-        #expect(failure.description == "Test error message")
-    }
-
-    @Test("Failure with empty message")
-    func failureWithEmptyMessage() async throws {
-        let failure = Work<TestAction, TestEnvironment>.Failure.message("")
-
-        #expect(failure.description == "")
-    }
-
-    @Test("Failure conforms to Error")
-    func failureConformsToError() async throws {
-        let failure: Error = Work<TestAction, TestEnvironment>.Failure.message("error")
-
-        #expect(failure is Work<TestAction, TestEnvironment>.Failure)
-    }
-
-    @Test("Failure conforms to CustomStringConvertible")
-    func failureConformsToCustomStringConvertible() async throws {
-        let failure: CustomStringConvertible = Work<TestAction, TestEnvironment>.Failure.message("custom description")
-
-        #expect(failure.description == "custom description")
-    }
-
-    @Test("Different Failure messages are distinguishable")
-    func differentFailureMessages() async throws {
-        let failure1 = Work<TestAction, TestEnvironment>.Failure.message("First error")
-        let failure2 = Work<TestAction, TestEnvironment>.Failure.message("Second error")
-
-        #expect(failure1.description != failure2.description)
-        #expect(failure1.description == "First error")
-        #expect(failure2.description == "Second error")
-    }
-}
+// NOTE: Work.Failure type was removed from the API. These tests are disabled.
 
 // MARK: - Integration Tests
 
 @MainActor
 @Suite("Work Integration")
 struct WorkIntegrationTests {
-
     @Test("map and cancellable can be combined")
     func mapAndCancellableCombined() async throws {
-        let work = try Work<Int, TestEnvironment>.run { env in
+        let work = try Work<Int, TestEnvironment, String>.run { env in
             return env.value
         }
         .map { value in
@@ -588,11 +548,11 @@ struct WorkIntegrationTests {
 
     @Test("flatMap and catch can be combined")
     func flatMapAndCatchCombined() async throws {
-        let work = try Work<Int, TestEnvironment>.run { _ in
+        let work = try Work<Int, TestEnvironment, String>.run { _ in
             return 10
         }
         .flatMap { value in
-            Work<TestAction, TestEnvironment>.run { _ in
+            Work<TestAction, TestEnvironment, String>.run { _ in
                 return .loaded(value + 5)
             }
         }
@@ -613,7 +573,7 @@ struct WorkIntegrationTests {
 
     @Test("multiple transformations chain correctly")
     func multipleTransformationsChain() async throws {
-        let work = try Work<Int, TestEnvironment>.run { env in
+        let work = try Work<Int, TestEnvironment, String>.run { env in
             return env.value
         }
         .map { value in
@@ -649,7 +609,7 @@ struct WorkIntegrationTests {
             var description: String { "Operation failed" }
         }
 
-        let work: Work<TestAction, TestEnvironment> = .run { _ in
+        let work: Work<TestAction, TestEnvironment, String> = .run { _ in
             throw OperationError()
         }.catch { _ in
             return .failed("Operation failed")

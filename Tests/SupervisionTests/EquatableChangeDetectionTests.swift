@@ -41,7 +41,7 @@ struct EquatableChangeDetectionTests {
             case batchUpdate(count: Int, name: String)
         }
 
-        func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+        func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
             switch action {
             case .setCount(let value):
                 context.modify(\.count, to: value)
@@ -61,7 +61,7 @@ struct EquatableChangeDetectionTests {
                     batch.name.wrappedValue = name
                 }
             }
-            return .empty()
+            return .done
         }
     }
 
@@ -76,9 +76,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             // Set to same value - should not trigger due to direct Equatable comparison
@@ -98,9 +98,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             // Set to different value
@@ -120,9 +120,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.name, to: "Hello")
@@ -140,9 +140,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.isEnabled, to: true)
@@ -160,9 +160,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.optionalValue, to: 5)
@@ -180,9 +180,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.items, to: ["a", "b", "c"])
@@ -202,9 +202,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             // Closure that doesn't actually change the value
@@ -226,9 +226,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.count) { count in
@@ -309,9 +309,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.optionalValue, to: nil)
@@ -329,9 +329,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.optionalValue, to: 5)
@@ -350,9 +350,9 @@ struct EquatableChangeDetectionTests {
             let context = Context<TestState>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
+                    mutationCount += 1
                 },
-                statePointer: pointer,
-                onMutate: { mutationCount += 1 }
+                statePointer: pointer
             )
 
             context.modify(\.items, to: [])

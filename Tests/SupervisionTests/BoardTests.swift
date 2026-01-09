@@ -17,41 +17,41 @@ struct AppDependency {
 final class UserClient: Sendable {}
 
 struct UserFeature: FeatureProtocol {
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         switch action {
         case .changeName(let newName):
             context.modify(\.name, to: newName)
-            return .empty()
+            return .done
         }
     }
-    
+
     struct Dependency: Sendable {
         let client: UserClient
     }
-    
+
     struct State: Equatable {
         var name: String = "something"
     }
-    
+
     enum Action {
         case changeName(String)
     }
 }
 
 struct DeviceFeature: FeatureProtocol {
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
-        return .empty()
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+        return .done
     }
-    
+
     struct Dependency: Sendable {
         let client: UserClient
     }
-    
+
     struct State: Identifiable, Equatable {
         let id: String
         var devices: [String] = []
     }
-    
+
     enum Action {
         case nothing
     }
@@ -59,15 +59,15 @@ struct DeviceFeature: FeatureProtocol {
 
 struct VoidFeature: FeatureProtocol {
     typealias Dependency = Void
-    
+
     struct State: Equatable {}
-    
+
     enum Action {
         case nothing
     }
-    
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
-        return .empty()
+
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+        return .done
     }
 }
 
@@ -82,8 +82,8 @@ struct IdentifiableVoidFeature: FeatureProtocol {
         case nothing
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
-        return .empty()
+    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void, CancellationID> {
+        return .done
     }
 }
 

@@ -410,7 +410,7 @@ extension Supervisor {
                 if let animation = effectiveAnimation {
                     // Apply animation when mutating state (with Equatable check)
                     withAnimation(animation) {
-                        self.applyDirectMutation(keyPath: keyPath, value: newValue)
+                        _ = self.applyDirectMutation(keyPath: keyPath, value: newValue)
                     }
                 } else {
                     // No animation - immediate update (with Equatable check)
