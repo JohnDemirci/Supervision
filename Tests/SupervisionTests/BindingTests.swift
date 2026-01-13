@@ -32,7 +32,7 @@ struct FormFeature: FeatureProtocol {
         case subscriptionToggled(Bool)
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         switch action {
         case .usernameChanged(let username):
             // Validate and trim username
@@ -86,7 +86,7 @@ struct UIStateFeature: FeatureProtocol {
         // No actions needed for pure UI state
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         return .done
     }
 }
@@ -253,7 +253,7 @@ struct BindingTests {
                 case nameChanged(String)
             }
             
-            func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+            func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
                 switch action {
                 case .nameChanged(let name):
                     // Transform to uppercase
@@ -357,6 +357,15 @@ struct BindingTests {
     @Test("hybrid pattern - direct binding with completion action")
     func testHybridPatternDirectBindingWithCompletionAction() async throws {
         struct VolumeFeature: FeatureProtocol {
+            func process(action: Action, context: borrowing Supervision.Context<State>) -> FeatureWorkKind {
+                switch action {
+                case .volumeChangeCompleted(let volume):
+                    // Log, trigger haptics, save to UserDefaults, etc.
+                    context.modify(\.lastCommittedVolume, to: volume)
+                    return .done
+                }
+            }
+            
             typealias Dependency = Void
 
             struct State: Equatable {
@@ -366,15 +375,6 @@ struct BindingTests {
 
             enum Action {
                 case volumeChangeCompleted(Double)
-            }
-            
-            func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-                switch action {
-                case .volumeChangeCompleted(let volume):
-                    // Log, trigger haptics, save to UserDefaults, etc.
-                    context.modify(\.lastCommittedVolume, to: volume)
-                    return .done
-                }
             }
         }
 

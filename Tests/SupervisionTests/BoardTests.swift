@@ -17,7 +17,7 @@ struct AppDependency {
 final class UserClient: Sendable {}
 
 struct UserFeature: FeatureProtocol {
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         switch action {
         case .changeName(let newName):
             context.modify(\.name, to: newName)
@@ -39,7 +39,7 @@ struct UserFeature: FeatureProtocol {
 }
 
 struct DeviceFeature: FeatureProtocol {
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         return .done
     }
 
@@ -66,7 +66,7 @@ struct VoidFeature: FeatureProtocol {
         case nothing
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         return .done
     }
 }
@@ -82,7 +82,7 @@ struct IdentifiableVoidFeature: FeatureProtocol {
         case nothing
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void, CancellationID> {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         return .done
     }
 }

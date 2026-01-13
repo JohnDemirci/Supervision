@@ -118,7 +118,7 @@ import Foundation
 /// processing occur on the main thread.
 @MainActor
 public protocol FeatureProtocol {
-    typealias FeatureWork = Work<Action, Dependency, CancellationID>
+    typealias FeatureWorkKind = Kind<Action, Dependency, CancellationID>
 
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
@@ -310,7 +310,7 @@ public protocol FeatureProtocol {
     ///
     /// - Note: The context is `borrowing` to prevent escaping. State mutations
     ///   are synchronous and complete before this method returns.
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind
 
     /// Creates a new instance of the feature.
     ///

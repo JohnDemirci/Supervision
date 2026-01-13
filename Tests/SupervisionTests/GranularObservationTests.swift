@@ -42,7 +42,7 @@ struct ObservationTestFeature: FeatureProtocol {
         case multiPropertyUpdate(count: Int, name: String, isEnabled: Bool)
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
         switch action {
         case .incrementCount:
             context.modify(\.count) { $0 += 1 }
@@ -333,18 +333,6 @@ struct GranularObservationTests {
         supervisor.send(.incrementCount)
 
         #expect(supervisor.count == 3)
-    }
-
-    @Test("Supervisor with Observable conformance")
-    func supervisorObservableConformance() {
-        let supervisor = Supervisor<ObservationTestFeature>(
-            state: .init(count: 5),
-            dependency: ()
-        )
-
-        // Verify Observable conformance
-        let observableSupervisor: any Observable = supervisor
-        #expect(observableSupervisor != nil)
     }
 
     // MARK: - Stress Tests

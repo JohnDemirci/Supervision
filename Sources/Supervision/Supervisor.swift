@@ -115,7 +115,7 @@ import OSLog
 /// - **Deinitialization**: Cancels all pending work and stops processing
 @MainActor
 @dynamicMemberLookup
-public final class Supervisor<Feature: FeatureProtocol>: Observable {
+public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
     public typealias Action = Feature.Action
     public typealias CancellationID = Feature.CancellationID
     public typealias Dependency = Feature.Dependency
@@ -127,8 +127,8 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
     private nonisolated let logger: Logger
 
-    private let actionContinuation: AsyncStream<Work<Action, Dependency, CancellationID>>.Continuation
-    private let actionStream: AsyncStream<Work<Action, Dependency, CancellationID>>
+    private let actionContinuation: AsyncStream<Feature.FeatureWorkKind>.Continuation
+    private let actionStream: AsyncStream<Feature.FeatureWorkKind>
     private let dependency: Dependency
 
     /*
@@ -196,7 +196,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: Work<Action, Dependency, CancellationID>.self,
+            of: Feature.FeatureWorkKind.self,
             bufferingPolicy: .unbounded
         )
 
@@ -437,7 +437,7 @@ extension Supervisor {
          Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
          Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
          */
-        let work: Work<Action, Dependency, CancellationID> = withUnsafeMutablePointer(
+        let work: Feature.FeatureWorkKind = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
             let context = Context<Feature.State>(
@@ -455,42 +455,26 @@ extension Supervisor {
             return self.feature.process(action: action, context: context)
         }
 
-        switch work.operation {
-        case .none:
-            return
-        case let .cancellation(id):
-            Task { await self.worker.cancel(taskID: id) }
-        case .task, .fireAndForget, .subscribe:
-            actionContinuation.yield(work)
-        }
+        actionContinuation.yield(work)
     }
 
-    private func processAsyncWork(_ work: Work<Action, Dependency, CancellationID>) async {
-        switch work.operation {
-        case .none:
+    private func processAsyncWork(_ work: Feature.FeatureWorkKind) async {
+        switch work {
+        case .done:
             return
-
-        case let .cancellation(id):
-            await self.worker.cancel(taskID: id)
-
-        case .fireAndForget:
-            Task { _ = await worker.run(work, using: dependency) }
-
-        case .task:
-            let resultAction = await self.worker.run(work, using: self.dependency)
-
-            if let resultAction {
-                self.send(resultAction)
+        case .cancel(let canceler):
+            await worker.processCancel(canceler)
+        case .run(let runnableWork):
+            if let newAction = await worker.processRun(runnableWork, using: dependency) {
+                send(newAction)
             }
-
-        case .subscribe:
-            await self.worker.runSubscription(
-                work,
-                using: self.dependency,
-                onAction: { [weak self] action in
-                    self?.send(action)
-                }
-            )
+        case .subscribe(let subscriptionWork):
+            await worker.processSubscription(work: subscriptionWork, using: dependency) { [weak self] newAction in
+                guard let self else { return }
+                send(newAction)
+            }
+        case .fireAndForget(let fireAndForgetWork):
+            Task { await worker.processFireAndForget(fireAndForgetWork, using: dependency) }
         }
     }
 }
