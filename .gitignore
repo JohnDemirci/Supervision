@@ -9,3 +9,5 @@ DerivedData/
 .nvim/
 .claude/
 buildServer.json.bak
+AGENTS.md
+/Docs

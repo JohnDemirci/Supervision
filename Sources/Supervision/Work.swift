@@ -7,237 +7,414 @@
 
 import Foundation
 
-public protocol Work<Action, Environment, CancellationID>: ~Copyable, Sendable {
-    associatedtype Action: Sendable
-    associatedtype Environment
-    associatedtype CancellationID: Cancellation = Never
+enum TestInput: @unchecked Sendable {
+    case taskResult(Any)              // expects Result<T, Error> boxed as Any
+    case streamValues([Any])          // expects [Element] boxed as Any
+    case streamFailure(Error)
+    case streamFinished
 }
 
-public enum Kind<Action: Sendable, Dependency, CancellationID: Cancellation>: Sendable {
-    case done
-    case cancel(Cancel<Action, Dependency, CancellationID>)
-    case run(any RunnableWork<Action, Dependency, CancellationID>)
-    case subscribe(any SubscriptionWork<Action, Dependency, CancellationID>)
-    case fireAndForget(FireAndForget<Action, Dependency, CancellationID>)
-}
+extension TaskPriority: @retroactive Hashable {}
 
-extension Kind {
-    public typealias Environment = Dependency
-
-    public static func cancellation(_ id: CancellationID) -> Self {
-        .cancel(Cancel<Action, Environment, CancellationID>(id: id))
+public struct Work<Output, Environment>: Sendable {
+    public indirect enum Operation: Sendable {
+        case done
+        case cancel(AnyHashableSendable)
+        case run(Run)
+        case merge(Array<Work<Output, Environment>>)
+        case concatenate(Array<Work<Output, Environment>>)
     }
 
-    public static func run<Value: Sendable>(
-        name: String? = nil,
-        priority: TaskPriority? = nil,
-        cancellationID: CancellationID? = nil,
-        produce: @Sendable @escaping (Environment) async throws -> Value,
-        transform: @Sendable @escaping (Result<Value, Error>) -> Action
+
+    public struct RunConfiguration: Sendable, Hashable {
+        public let name: String?
+        public let cancellationID: AnyHashableSendable?
+        public let cancelInFlight: Bool
+        public let debounce: Duration?
+        public let throttle: Duration?
+        public let priority: TaskPriority?
+        public let fireAndForget: Bool
+
+        public init(
+            name: String? = nil,
+            cancellationID: AnyHashableSendable? = nil,
+            cancelInFlight: Bool = false,
+            fireAndForget: Bool = false,
+            debounce: Duration? = nil,
+            throttle: Duration? = nil,
+            priority: TaskPriority? = nil
+        ) {
+            self.name = name
+            self.cancellationID = cancellationID
+            self.cancelInFlight = cancelInFlight
+            self.debounce = debounce
+            self.throttle = throttle
+            self.priority = priority
+            self.fireAndForget = fireAndForget
+        }
+
+        func with(
+            name: String?? = nil,
+            cancellationID: AnyHashableSendable?? = nil,
+            cancelInFlight: Bool? = nil,
+            fireAndForget: Bool? = nil,
+            debounce: Duration?? = nil,
+            throttle: Duration?? = nil,
+            priority: TaskPriority?? = nil
+        ) -> RunConfiguration {
+            RunConfiguration(
+                name: name ?? self.name,
+                cancellationID: cancellationID ?? self.cancellationID,
+                cancelInFlight: cancelInFlight ?? self.cancelInFlight,
+                fireAndForget: fireAndForget ?? self.fireAndForget,
+                debounce: debounce ?? self.debounce,
+                throttle: throttle ?? self.throttle,
+                priority: priority ?? self.priority
+            )
+        }
+    }
+
+    public struct Run: Sendable {
+        let configuration: RunConfiguration
+        let execute: @Sendable (Environment, @escaping @Sendable (Output) async -> Void) async -> Void
+        let testPlan: TestPlan?
+
+        init(
+            configuration: RunConfiguration = .init(),
+            execute: @Sendable @escaping (Environment, @Sendable @escaping (Output) async -> Void) async -> Void,
+            testPlan: TestPlan? = nil
+        ) {
+            self.configuration = configuration
+            self.execute = execute
+            self.testPlan = testPlan
+        }
+
+        func with(configuration: RunConfiguration) -> Run {
+            Run(
+                configuration: configuration,
+                execute: execute,
+                testPlan: testPlan
+            )
+        }
+    }
+
+    struct TestPlan: @unchecked Sendable {
+        enum Kind: Sendable, RawRepresentable {
+            init?(rawValue: String) {
+                if rawValue == "task" {
+                    self = .task
+                } else if rawValue == "stream" {
+                    self = .stream
+                } else {
+                    return nil
+                }
+            }
+            
+            var rawValue: String {
+                switch self {
+                case .task: "task"
+                case .stream: "stream"
+                }
+            }
+
+            typealias RawValue = String
+
+            case task
+            case stream
+        }
+
+        let kind: Kind
+        let expectedInputType: Any.Type
+        let isContinuous: Bool
+        let feed: @Sendable (TestInput) -> [Output]
+    }
+
+    public let operation: Operation
+
+    init(operation: Operation) {
+        self.operation = operation
+    }
+}
+
+extension Work {
+    public static var done: Self {
+        Work(operation: .done)
+    }
+
+    public static func cancel(_ id: some (Sendable & Hashable)) -> Self {
+        Work(operation: .cancel(AnyHashableSendable(value: id)))
+    }
+
+    public static func run<Value>(
+        config: RunConfiguration = .init(),
+        body: @escaping @Sendable (Environment) async throws -> Value,
+        map: @escaping @Sendable (Result<Value, Error>) -> Output
     ) -> Self {
-        .run(
-            Run<Action, Environment, CancellationID, Value>(
-                name: name,
-                priority: priority,
-                cancellationID: cancellationID,
-                produce: produce,
-                transform: transform
+        Work(
+            operation: .run(
+                Run(
+                    configuration: config,
+                    execute: { env, send in
+                        do { await send(map(.success(try await body(env)))) }
+                        catch is CancellationError { return }
+                        catch { await send(map(.failure(error))) }
+                    },
+                    testPlan: isTesting() ? TestPlan(
+                        kind: .task,
+                        expectedInputType: Result<Value, Error>.self,
+                        isContinuous: false,
+                        feed: { input in
+                            guard
+                                case let .taskResult(any) = input,
+                                let typed = any as? Result<Value, Error>
+                            else { return [] }
+
+                            return [map(typed)]
+                        }
+                    ) : nil
+                )
             )
         )
     }
 
     public static func subscribe<Value: Sendable>(
-        name: String? = nil,
-        cancellationID: CancellationID,
-        produce: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Value, Error>,
-        transform: @Sendable @escaping (Result<Value, Error>) -> Action
+        config: RunConfiguration = .init(fireAndForget: true),
+        stream: @escaping @Sendable (Environment) async throws -> AsyncThrowingStream<Value, Error>,
+        map: @escaping @Sendable (Result<Value, Error>) -> Output
     ) -> Self {
-        .subscribe(
-            Subscribe<Action, Environment, CancellationID, Value>(
-                name: name,
-                cancellationID: cancellationID,
-                produce: produce,
-                transform: transform
+        Work(
+            operation: .run(
+                Run(
+                    configuration: config,
+                    execute: { env, send in
+                        do {
+                            let sequence = try await stream(env)
+                            for try await value in sequence {
+                                await send(map(.success(value)))
+                            }
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            await send(map(.failure(error)))
+                        }
+                    },
+                    testPlan: isTesting() ? TestPlan(
+                        kind: .stream,
+                        expectedInputType: Value.self,
+                        isContinuous: true,
+                        feed: { input in
+                            switch input {
+                            case let .streamValues(values):
+                                return values.compactMap { $0 as? Value }.map { map(.success($0)) }
+                            case let .streamFailure(error):
+                                return [map(.failure(error))]
+                            case .streamFinished, .taskResult:
+                                return []
+                            }
+                        }
+                    ) : nil
+                )
             )
         )
     }
 
     public static func fireAndForget(
-        priority: TaskPriority? = nil,
-        produce: @Sendable @escaping (Environment) async throws -> Void
+        config: RunConfiguration = .init(fireAndForget: true),
+        body: @escaping @Sendable (Environment) async throws -> Void
     ) -> Self {
-        .fireAndForget(
-            FireAndForget<Action, Environment, CancellationID>(
-                priority: priority,
-                work: produce
+        Work(
+            operation: .run(
+                Run(
+                    configuration: config,
+                    execute: { env, _ in
+                        do { try await body(env) }
+                        catch { return }
+                    },
+                    testPlan: nil
+                )
+            )
+        )
+    }
+
+    public static func merge(_ works: Work<Output, Environment>...) -> Self {
+        merge(works)
+    }
+
+    public static func merge(_ works: [Work<Output, Environment>]) -> Self {
+        let nonEmptyWorks = works.filter {
+            if case .done = $0.operation { return false }
+            return true
+        }
+
+        if nonEmptyWorks.isEmpty { return .done }
+        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+
+        return Work(operation: .merge(nonEmptyWorks))
+    }
+
+    public static func concatenate(_ works: Work<Output, Environment>...) -> Self {
+        concatenate(works)
+    }
+
+    public static func concatenate(_ works: [Work<Output, Environment>]) -> Self {
+        let nonEmptyWorks = works.filter {
+            if case .done = $0.operation { return false }
+            return true
+        }
+
+        if nonEmptyWorks.isEmpty { return .done }
+        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+
+        return Work(operation: .concatenate(nonEmptyWorks))
+    }
+}
+
+extension Work {
+    public func named(_ name: String) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(name: name))
+        }
+    }
+
+    public func cancellable(
+        id: some (Sendable & Hashable),
+        cancelInFlight: Bool = false
+    ) -> Self {
+        modifyRun { run in
+            run.with(
+                configuration: run.configuration.with(
+                    cancellationID: AnyHashableSendable(value: id),
+                    cancelInFlight: cancelInFlight
+                )
+            )
+        }
+    }
+
+    public func priority(_ priority: TaskPriority) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(priority: priority))
+        }
+    }
+
+    public func throttle(for duration: Duration) -> Self {
+        modifyRun { run in
+            assert(run.configuration.cancellationID != nil, "throttle is only valid for cancellable works")
+            return run.with(configuration: run.configuration.with(throttle: duration))
+        }
+    }
+
+    public func debounce(for duration: Duration) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(debounce: duration))
+        }
+    }
+
+    private func modifyRun(_ transform: (Run) -> Run) -> Self {
+        return switch operation {
+        case .run(let run):
+            Work(operation: .run(transform(run)))
+
+        case .merge(let works):
+            Work(operation: .merge(works.map { $0.modifyRun(transform) }))
+
+        case .concatenate(let works):
+            Work(operation: .concatenate(works.map { $0.modifyRun(transform) }))
+
+        case .done, .cancel:
+            self
+        }
+    }
+
+    func map<NewOutput>(
+        _ transform: @escaping @Sendable (Output) -> NewOutput
+    ) -> Work<NewOutput, Environment> {
+        switch operation {
+        case .done:
+            return .done
+        case .cancel(let id):
+            return .cancel(id)
+        case .merge(let works):
+            return Work<NewOutput, Environment>.merge(
+                Work.map(from: works, transform: transform)
+            )
+        case .concatenate(let works):
+            return Work<NewOutput, Environment>.concatenate(
+                Work.map(from: works, transform: transform)
+            )
+        case .run(let run):
+            return Work<NewOutput, Environment>(
+                operation: .run(
+                    Run.map(from: run, transform: transform)
+                )
+            )
+        }
+    }
+}
+
+extension Work where Output: Sendable {
+    public static func send(_ output: Output) -> Self {
+        Work(
+            operation: .run(
+                Run(
+                    configuration: .init(),
+                    execute: { _, send in
+                        await send(output)
+                    },
+                    testPlan: TestPlan(
+                        kind: .task,
+                        expectedInputType: Void.self,
+                        isContinuous: false,
+                        feed: { _ in [output] }
+                    )
+                )
             )
         )
     }
 }
 
-public protocol RunnableWork<Action, Environment, CancellationID>: Work {
-    var name: String? { get }
-    var priority: TaskPriority? { get }
-    var cancellationID: CancellationID? { get }
-
-    func execute(with env: Environment) async -> Action
+private extension Work {
+    static func map<OldOutput, NewOutput>(
+        from olderWorks: [Work<OldOutput, Environment>],
+        transform: @Sendable @escaping (OldOutput) -> NewOutput
+    ) -> [Work<NewOutput, Environment>] {
+        olderWorks.map { olderWork in
+            olderWork.map { olderOutput in
+                transform(olderOutput)
+            }
+        }
+    }
 }
 
-extension RunnableWork {
-    public static func run<Value: Sendable>(
-        name: String? = nil,
-        priority: TaskPriority? = nil,
-        cancellationID: CancellationID? = nil,
-        produce: @Sendable @escaping (Environment) async throws -> Value,
-        transform: @Sendable @escaping (Result<Value, Error>) -> Action
-    ) -> some RunnableWork<Action, Environment, CancellationID> {
-        Run<Action, Environment, CancellationID, Value>(
-            name: name,
-            priority: priority,
-            cancellationID: cancellationID,
-            produce: produce,
-            transform: transform
+private extension Work.Run {
+    static func map<OldOutput, NewOutput>(
+        from run: Work<OldOutput, Environment>.Run,
+        transform: @Sendable @escaping (OldOutput) -> NewOutput
+    ) -> Work<NewOutput, Environment>.Run {
+        Work<NewOutput,Environment>.Run(
+            configuration: Work<NewOutput,
+            Environment>.RunConfiguration(
+                name: run.configuration.name,
+                cancellationID: run.configuration.cancellationID,
+                cancelInFlight: run.configuration.cancelInFlight,
+                debounce: run.configuration.debounce,
+                throttle: run.configuration.throttle,
+                priority: run.configuration.priority
+            ),
+            execute: { env, send in
+                await run.execute(env) { output in
+                    await send(transform(output))
+                }
+            },
+            testPlan: run.testPlan.map { currentPlan in
+                Work<NewOutput, Environment>.TestPlan(
+                    kind: Work<NewOutput, Environment>.TestPlan.Kind(rawValue: currentPlan.kind.rawValue)!,
+                    expectedInputType: currentPlan.expectedInputType,
+                    isContinuous: currentPlan.isContinuous,
+                    feed: { input in
+                        currentPlan.feed(input).map(transform)
+                    }
+                )
+            }
         )
     }
 }
-
-public protocol SubscriptionWork<Action, Environment, CancellationID>: Work {
-    var name: String? { get }
-    var cancellationID: CancellationID { get }
-
-    associatedtype Value
-    associatedtype ActionSequence: AsyncSequence where ActionSequence.Element == Action
-    func subscribe(with env: Environment) async throws -> ActionSequence
-
-    func receive(value: Value) -> Action
-    func receive(error: Error) -> Action
-}
-
-public struct Done<
-    Action: Sendable,
-    Environment,
-    CancellationID: Cancellation
->: Work {
-    public init() { }
-}
-
-public struct Cancel<
-    Action: Sendable,
-    Environment,
-    CancellationID: Cancellation
->: Work {
-    let id: CancellationID
-
-    public init(id: CancellationID) {
-        self.id = id
-    }
-}
-
-public struct Run<
-    Action: Sendable,
-    Environment,
-    CancellationID: Cancellation,
-    Value: Sendable
->: RunnableWork {
-    public let name: String?
-    public let priority: TaskPriority?
-    public let cancellationID: CancellationID?
-    let produce: @Sendable (Environment) async throws -> Value
-    let transform: @Sendable (Result<Value, Error>) -> Action
-
-    public init(
-        name: String? = nil,
-        priority: TaskPriority? = nil,
-        cancellationID: CancellationID? = nil,
-        produce: @Sendable @escaping (Environment) async throws -> Value,
-        transform: @Sendable @escaping (Result<Value, Error>) -> Action
-    ) {
-        self.name = name
-        self.priority = priority
-        self.cancellationID = cancellationID
-        self.produce = produce
-        self.transform = transform
-    }
-
-    @concurrent
-    public func execute(with env: Environment) async -> Action {
-        do {
-            let value = try await produce(env)
-            return transform(.success(value))
-        } catch {
-            return transform(.failure(error))
-        }
-    }
-
-    public func receive(value: Value) -> Action {
-        transform(.success(value))
-    }
-
-    public func receive(error: Error) -> Action {
-        transform(.failure(error))
-    }
-}
-
-public struct Subscribe<
-    Action: Sendable,
-    Environment,
-    CancellationID: Cancellation,
-    Value: Sendable
->: SubscriptionWork, Sendable {
-    public let name: String?
-    public let cancellationID: CancellationID
-    let produce: @Sendable (Environment) async throws -> AsyncThrowingStream<Value, Error>
-    let transform: @Sendable (Result<Value, Error>) -> Action
-
-    public init(
-        name: String? = nil,
-        cancellationID: CancellationID,
-        produce: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Value, Error>,
-        transform: @Sendable @escaping (Result<Value, Error>) -> Action
-    ) {
-        self.name = name
-        self.cancellationID = cancellationID
-        self.produce = produce
-        self.transform = transform
-    }
-
-    @concurrent
-    public func subscribe(with environment: Environment) async throws -> some AsyncSequence<Action, Error> {
-        try await produce(environment)
-            .map { [transform] value in
-                transform(.success(value))
-            }
-    }
-
-    public func receive(value: Value) -> Action {
-        transform(.success(value))
-    }
-
-    public func receive(error: Error) -> Action {
-        transform(.failure(error))
-    }
-}
-
-public struct FireAndForget<Action: Sendable, Environment, CancellationID: Cancellation>: Work {
-    let priority: TaskPriority?
-    let work: @Sendable (Environment) async throws -> Void
-
-    public init(
-        priority: TaskPriority?,
-        work: @Sendable @escaping (Environment) async throws -> Void
-    ) {
-        self.priority = priority
-        self.work = work
-    }
-
-    @concurrent
-    func execute(with environment: Environment) async {
-        do {
-            _ = try await work(environment)
-        } catch {
-            // nothing we do not care
-        }
-    }
-}
-
-extension Never: Cancellation {}

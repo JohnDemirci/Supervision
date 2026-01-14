@@ -117,7 +117,6 @@ import OSLog
 @dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
     public typealias Action = Feature.Action
-    public typealias CancellationID = Feature.CancellationID
     public typealias Dependency = Feature.Dependency
     public typealias State = Feature.State
 
@@ -146,7 +145,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
      I did not want to add too many responsibilities onto Supervisor.
      Worker is an actor that performs the Side effects and returns the results to the Supervisor
      */
-    private let worker: Worker<Action, Dependency, CancellationID>
+    private let worker: Worker<Action, Dependency>
 
     /*
      sequentially handling async work
@@ -264,6 +263,16 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
     public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
         trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
+    }
+
+    public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
+        trackAccess(for: keyPath)
+        return _state[keyPath: keyPath]
+    }
+
+    public func read<T>(_ keypath: KeyPath<State, T>) -> T {
+        trackAccess(for: keypath)
+        return _state[keyPath: keypath]
     }
 }
 
@@ -459,22 +468,14 @@ extension Supervisor {
     }
 
     private func processAsyncWork(_ work: Feature.FeatureWorkKind) async {
-        switch work {
+        switch work.operation {
         case .done:
             return
-        case .cancel(let canceler):
-            await worker.processCancel(canceler)
-        case .run(let runnableWork):
-            if let newAction = await worker.processRun(runnableWork, using: dependency) {
-                send(newAction)
-            }
-        case .subscribe(let subscriptionWork):
-            await worker.processSubscription(work: subscriptionWork, using: dependency) { [weak self] newAction in
+        default:
+            await worker.handle(work: work, environment: dependency) { @MainActor [weak self] action in
                 guard let self else { return }
-                send(newAction)
+                send(action)
             }
-        case .fireAndForget(let fireAndForgetWork):
-            Task { await worker.processFireAndForget(fireAndForgetWork, using: dependency) }
         }
     }
 }

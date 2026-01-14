@@ -7,49 +7,10 @@
 
 import OSLog
 
-/// An actor responsible for executing asynchronous work and managing task lifecycles.
-///
-/// `Worker` is the execution engine for ``Work`` units. It handles task creation,
-/// cancellation, and error handling, ensuring thread-safe async operations.
-///
-/// ## Overview
-///
-/// Worker is used internally by ``Supervisor`` to execute side effects returned
-/// from ``FeatureProtocol/process(action:context:)``. You typically don't interact
-/// with Worker directly.
-///
-/// ## Task Management
-///
-/// Worker tracks cancellable tasks by their cancellation ID:
-///
-/// - **Unique IDs**: Each cancellable work must have a unique ID
-/// - **Duplicate handling**: If work with the same ID is already running,
-///   new work is dropped and a warning is logged
-/// - **Automatic cleanup**: Tasks are removed from tracking after completion
-///
-/// ## Cancellation
-///
-/// Tasks can be cancelled individually or all at once:
-///
-/// - ``cancel(taskID:)``: Cancels a specific task by ID
-/// - ``cancelAll()``: Cancels all tracked tasks (called on deinit)
-///
-/// ## Error Handling
-///
-/// When work throws an error:
-/// 1. If an `onError` handler was provided (via `.catch`), it's called to produce an action
-/// 2. Otherwise, the error is logged and no action is emitted
-///
-/// This follows the "log-by-default, opt-in recovery" pattern.
-///
-/// ## Thread Safety
-///
-/// Worker is an `actor`, ensuring all task management is thread-safe.
-/// The `@concurrent` annotation on `perform` methods allows concurrent
-/// task awaiting without blocking the actor.
-actor Worker<Action: Sendable, Environment: Sendable, CancellationID: Cancellation>: Sendable {
+actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// Active tasks indexed by their cancellation ID.
-    private var tasks: [CancellationID: Task<Action?, Never>]
+    private var tasks: [AnyHashableSendable: Task<Void, Never>]
+    private var lastExecutionTimes: [AnyHashableSendable: ContinuousClock.Instant] = [:]
 
     private let logger = Logger(subsystem: "Supervision", category: "Worker<\(Action.self), \(Environment.self)>")
 
@@ -67,7 +28,8 @@ actor Worker<Action: Sendable, Environment: Sendable, CancellationID: Cancellati
     /// - Parameter taskID: The cancellation ID of the task to cancel.
     ///
     /// If no task exists with the given ID, this method does nothing.
-    func cancel(taskID: CancellationID) {
+    @inline(__always)
+    private func cancel(taskID: AnyHashableSendable) {
         tasks[taskID]?.cancel()
         tasks[taskID] = nil
     }
@@ -76,100 +38,130 @@ actor Worker<Action: Sendable, Environment: Sendable, CancellationID: Cancellati
     ///
     /// Called automatically when the worker is deallocated.
     @inline(__always)
-    func cancelAll() {
+    private func cancelAll() {
         tasks.values.forEach { $0.cancel() }
         tasks.removeAll()
     }
 
-    @inline(__always)
-    func processCancel(
-        _ work: Cancel<Action, Environment, CancellationID>
-    ) {
-        cancel(taskID: work.id)
-    }
-
-    func processFireAndForget(
-        _ work: FireAndForget<Action, Environment, CancellationID>,
-        using dependency: Environment
-    ) {
-        Task {
-            await work.execute(with: dependency)
+    @discardableResult
+    func handle(
+        work: Work<Action, Environment>,
+        environment: Environment,
+        send: @escaping @Sendable (Action) async -> Void
+    ) async -> Bool {
+        switch work.operation {
+        case .done:
+            return true
+        case .cancel(let id):
+            cancel(taskID: id)
+            return true
+        case .run(let run):
+            return await processRun(run: run, environment: environment, send: send)
+        case .concatenate(let works):
+            return await processConcatenate(works, environment: environment, send: send)
+        case .merge(let works):
+            await processMerge(works: works, environment: environment, send: send)
+            return true
         }
     }
 
-    func processRun(
-        _ work: any RunnableWork<Action, Environment, CancellationID>,
-        using dependency: Environment
-    ) async -> Action? {
-        let task = Task<Action?, Never>(
-            name: work.name,
-            priority: work.priority
-        ) {
-            guard !Task.isCancelled else {
-                logger.info("""
-                Task: \(Task.name ?? "") was cancellated
-                """)
-                return nil
+    private func processRun(
+        run: Work<Action, Environment>.Run,
+        environment: Environment,
+        send: @escaping @Sendable (Action) async -> Void,
+    ) async -> Bool {
+        if let cancellationID = run.configuration.cancellationID {
+            if run.configuration.cancelInFlight {
+                cancel(taskID: cancellationID)
+            } else if tasks[cancellationID] != nil {
+                return true
+            }
+        }
+
+        if let throttle = run.configuration.throttle {
+            if let id = run.configuration.cancellationID {
+                let now = ContinuousClock.now
+                if let lastTime = lastExecutionTimes[id] {
+                    let elapsed = now - lastTime
+                    if elapsed < throttle {
+                        logger.debug("Throttled effect \(id)")
+                        return true
+                    }
+                }
+                lastExecutionTimes[id] = now
+            }
+        } else if let id = run.configuration.cancellationID {
+            lastExecutionTimes[id] = nil
+        }
+
+        // generally speaking you do not need weak self on Tasks
+        let task = Task<Void, Never>(
+            name: run.configuration.name,
+            priority: run.configuration.priority,
+            operation: {
+                if let debounce = run.configuration.debounce {
+                    try? await Task.sleep(for: debounce)
+                    guard !Task.isCancelled else { return }
+                }
+
+                await run.execute(environment, send)
+            }
+        )
+
+        if let id = run.configuration.cancellationID {
+            tasks[id] = task
+        }
+
+        if !run.configuration.fireAndForget {
+            await task.value
+            let cancellation = !task.isCancelled
+
+            if let id = run.configuration.cancellationID {
+                cancel(taskID: id)
             }
 
-            return await work.execute(with: dependency)
+            return cancellation
         }
-
-        if let cancellationID = work.cancellationID {
-            guard tasks[cancellationID] == nil else {
-                logger.info("""
-                Duplicate cancellationID for Work is received.
-                A work with the same cancellation ID is already running
-                The oldest is prioritized and the newest will be ignored.
-
-                Please cancel the ongoing task if this priority does not suit your flow 
-                """)
-                return nil
-            }
-
-            tasks[cancellationID] = task
-            let value = await task.value
-            tasks[cancellationID] = nil
-            return value
-        } else {
-            return await task.value
-        }
+        return true
     }
 
-    func processSubscription<T: SubscriptionWork<Action, Environment, CancellationID>>(
-        work: T,
-        using dependency: Environment,
-        onAction: @MainActor @Sendable @escaping (Action) -> Void
-    ) {
-        guard tasks[work.cancellationID] == nil else {
-            logger.info("Duplicate subscription ID - ignoring")
+    private func processMerge(
+        works: [Work<Action, Environment>],
+        environment: Environment,
+        send: @escaping @Sendable (Action) async -> Void
+    ) async {
+        guard !works.isEmpty else { return }
+
+        if works.count == 1 {
+            await handle(work: works.first!, environment: environment, send: send)
             return
         }
 
-        let cancellationID = work.cancellationID
-
-        let task = Task<Action?, Never> { [weak self] in
-            defer {
-                Task { [weak self] in
-                    await self?.cancel(taskID: cancellationID)
+        await withTaskGroup { group in
+            for work in works {
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    guard !Task.isCancelled else { return }
+                    await self.handle(work: work, environment: environment, send: send)
                 }
             }
 
-            do {
-                let stream = try await work.subscribe(with: dependency)
-                for try await value in stream {
-                    guard !Task.isCancelled else { return nil }
-                    await onAction(value)
-                }
-                return nil
-            } catch is CancellationError {
-                return nil
-            } catch {
-                await onAction(work.receive(error: error))
-                return nil
+            await group.waitForAll()
+        }
+    }
+
+    private func processConcatenate(
+        _ works: [Work<Action, Environment>],
+        environment: Environment,
+        send: @escaping @Sendable (Action) async -> Void
+    ) async -> Bool {
+        for work in works {
+            let shouldContinue = await handle(work: work, environment: environment, send: send)
+
+            if !shouldContinue {
+                return false
             }
         }
-
-        tasks[work.cancellationID] = task
+        return true
     }
 }

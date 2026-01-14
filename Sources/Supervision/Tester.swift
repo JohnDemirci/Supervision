@@ -12,7 +12,6 @@ import OSLog
 @dynamicMemberLookup
 public final class Tester<Feature: FeatureProtocol> {
     public typealias Action = Feature.Action
-    public typealias CancellationID = Feature.CancellationID
     public typealias Dependency = Feature.Dependency
     public typealias State = Feature.State
 
