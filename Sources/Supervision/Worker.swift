@@ -43,6 +43,13 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
         tasks.removeAll()
     }
 
+    /*
+     this function takes a work and makes the proper execution choices
+     
+     the boolen return value indicates that if there are currently running additional works, should we continue running them. if the value is false then we discard the tasks.
+     
+     this is particularly beneficial for the concatenated works
+     */
     @discardableResult
     func handle(
         work: Work<Action, Environment>,
@@ -91,6 +98,8 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
                 lastExecutionTimes[id] = now
             }
         } else if let id = run.configuration.cancellationID {
+            // if you do not provide a throtle for a given id, the throttle is reset.
+            // we might implement a TTL for this instead in the future.
             lastExecutionTimes[id] = nil
         }
 
@@ -162,6 +171,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
                 return false
             }
         }
+        
         return true
     }
 }

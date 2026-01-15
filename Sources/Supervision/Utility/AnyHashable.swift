@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct AnyHashableSendable: Hashable, Sendable, Cancellation {
+public struct AnyHashableSendable: Hashable, Sendable {
     public let value: any (Hashable & Sendable)
 
     public init(value: some (Hashable & Sendable)) {

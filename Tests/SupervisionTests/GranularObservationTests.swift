@@ -42,7 +42,7 @@ struct ObservationTestFeature: FeatureProtocol {
         case multiPropertyUpdate(count: Int, name: String, isEnabled: Bool)
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         switch action {
         case .incrementCount:
             context.modify(\.count) { $0 += 1 }

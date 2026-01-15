@@ -41,7 +41,7 @@ struct EquatableChangeDetectionTests {
             case batchUpdate(count: Int, name: String)
         }
 
-        func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind {
+        func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
             switch action {
             case .setCount(let value):
                 context.modify(\.count, to: value)

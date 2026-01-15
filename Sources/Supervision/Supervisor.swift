@@ -126,8 +126,8 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
 
     private nonisolated let logger: Logger
 
-    private let actionContinuation: AsyncStream<Feature.FeatureWorkKind>.Continuation
-    private let actionStream: AsyncStream<Feature.FeatureWorkKind>
+    private let actionContinuation: AsyncStream<Feature.FeatureWork>.Continuation
+    private let actionStream: AsyncStream<Feature.FeatureWork>
     private let dependency: Dependency
 
     /*
@@ -195,7 +195,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
         self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: Feature.FeatureWorkKind.self,
+            of: Feature.FeatureWork.self,
             bufferingPolicy: .unbounded
         )
 
@@ -265,6 +265,15 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
         return _state[keyPath: keyPath]
     }
 
+    /*
+     it looks like the observation does not work correctly with dynamic member lookup when we are observing nested keypaths.
+     
+     from what i gathered it looks like the compiler cannot determine that at sn optimized level and therefore ignore it it only viewed as the parent keypath not the nested ones so when a child keypath gets updated the parent is not being updated
+     
+     to negate this behavior instead of using dynamic member lookup we are going to be using a custom function and custom subscript.
+     
+     from the limited testing it looks like the view is updating correctly
+     */
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
         trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
@@ -387,55 +396,6 @@ extension Supervisor {
 }
 
 extension Supervisor {
-    /// Dispatches an action to the feature for processing.
-    ///
-    /// This is the primary way to trigger state changes and side effects. The action
-    /// flows through your feature's `process(action:context:)` method synchronously,
-    /// and any returned ``Work`` is scheduled for async execution.
-    ///
-    /// ```swift
-    /// // Simple action dispatch
-    /// supervisor.send(.increment)
-    ///
-    /// // Action with associated value
-    /// supervisor.send(.userNameChanged("John"))
-    /// ```
-    ///
-    /// ## Processing Flow
-    ///
-    /// 1. Action is passed to `feature.process(action:context:)`
-    /// 2. Feature mutates state via `context.state`
-    /// 3. Feature returns ``Work`` describing side effects
-    /// 4. Work is executed:
-    ///    - `.empty()`: No action taken
-    ///    - `.cancel(id)`: Cancels running work with that ID
-    ///    - `.run { }`: Queued for async execution
-    ///    - `.fireAndForget { }`: Executed without awaiting result
-     ///
-    /// ## State Updates
-    ///
-    /// State mutations in `process()` are applied **synchronously** before `send()` returns.
-    /// This ensures UI updates immediately reflect the new state:
-    ///
-    /// ```swift
-    /// supervisor.send(.increment)
-    /// // supervisor.count is already updated here
-    /// ```
-    ///
-    /// ## Async Work
-    ///
-    /// Work returned from `process()` is executed asynchronously. When work completes
-    /// with an action, that action is automatically dispatched via `send()`:
-    ///
-    /// ```swift
-    /// case .fetchUsers:
-    ///     return .run { env in
-    ///         let users = try await env.api.fetchUsers()
-    ///         return .usersLoaded(users)  // This action is sent automatically
-    ///     }
-    /// ```
-    ///
-    /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
         // Note: [weak self] is not needed here because this closure is non-escaping.
         // Although Context stores an @escaping closure (mutateFn), the Context itself
@@ -446,7 +406,7 @@ extension Supervisor {
          Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
          Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
          */
-        let work: Feature.FeatureWorkKind = withUnsafeMutablePointer(
+        let work: Feature.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
             let context = Context<Feature.State>(
@@ -467,7 +427,7 @@ extension Supervisor {
         actionContinuation.yield(work)
     }
 
-    private func processAsyncWork(_ work: Feature.FeatureWorkKind) async {
+    private func processAsyncWork(_ work: Feature.FeatureWork) async {
         switch work.operation {
         case .done:
             return

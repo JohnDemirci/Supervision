@@ -32,7 +32,7 @@ public final class Tester<Feature: FeatureProtocol> {
     }
 
     func send(_ action: Action) {
-        let work: Feature.FeatureWorkKind = withUnsafeMutablePointer(
+        let work: Feature.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
             let context = Context<Feature.State>(

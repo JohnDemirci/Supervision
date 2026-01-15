@@ -118,171 +118,20 @@ import Foundation
 /// processing occur on the main thread.
 @MainActor
 public protocol FeatureProtocol {
-    typealias FeatureWorkKind = Work<Action, Dependency>
+    typealias FeatureWork = Work<Action, Dependency>
 
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
-    /// The state managed by this feature.
-    ///
-    /// State should be a value type (struct or enum) to ensure predictable behavior.
-    /// Using a reference type (class) will trigger a runtime warning.
-    ///
-    /// ```swift
-    /// struct State {
-    ///     var userName: String = ""
-    ///     var isLoggedIn: Bool = false
-    /// }
-    /// ```
     associatedtype State: Equatable
 
-    /// This property helps with sending observation notifications to the system
-    /// It is typically used for computed properties
-    /// When you have a computed property, you need to denote which keypaths the computed property depend on.
-    /// If they do not depend on any keypaths then they should live elsewhere
-    ///
-    /// A mapping of computed properties to their underlying stored property dependencies.
-    ///
-    /// Use this property to declare which stored properties a computed property depends on,
-    /// enabling precise observation notifications when those stored properties change.
-    ///
-    /// ## Overview
-    ///
-    /// When your feature's `State` includes computed properties, you must specify which
-    /// stored properties they depend on. This allows the observation system to trigger
-    /// notifications for computed properties when their dependencies change.
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// struct State: Equatable {
-    ///     var firstName: String = ""
-    ///     var lastName: String = ""
-    ///
-    ///     var fullName: String {
-    ///         "\(firstName) \(lastName)"
-    ///     }
-    ///
-    ///     var age: Int = 0
-    ///     var canVote: Bool {
-    ///         age >= 18
-    ///     }
-    /// }
-    ///
-    /// var observationMap: ObservationMap {
-    ///     [
-    ///         \State.fullName: [\State.firstName, \State.lastName],
-    ///         \State.canVote: [\State.age]
-    ///     ]
-    /// }
-    /// ```
-    ///
-    /// In this example:
-    /// - When `firstName` or `lastName` changes, observers of `fullName` are notified
-    /// - When `age` changes, observers of `canVote` are notified
-    ///
-    /// ## Default Implementation
-    ///
-    /// If your feature has no computed properties, return an empty dictionary:
-    ///
-    /// ```swift
-    /// var observationMap: ObservationMap {
-    ///     [:]
-    /// }
-    /// ```
-    ///
-    /// ## Rules
-    ///
-    /// - Keys are keypaths to computed properties in your `State`
-    /// - Values are arrays of keypaths to the stored properties they depend on
-    /// - Only include computed properties that are actually observed in your UI
-    /// - Computed properties that don't depend on stored properties should be moved
-    ///   to view logic or helpers outside of `State` or `Supervisor`
-    ///
-    /// - Note: This is required for the observation system to correctly track changes
-    ///   to computed properties. Without it, SwiftUI views observing computed properties
-    ///   may not update when the underlying stored properties change.
     var observationMap: ObservationMap { get }
 
-    /// The actions that can be dispatched to this feature.
-    ///
-    /// Actions represent events that can occur—user interactions, timer ticks,
-    /// network responses, etc. Define as an enum with associated values:
-    ///
-    /// ```swift
-    /// enum Action {
-    ///     case loginTapped
-    ///     case usernameChanged(String)
-    ///     case loginResponse(Result<User, Error>)
-    /// }
-    /// ```
-    ///
-    /// Actions must be `Sendable` to safely cross actor boundaries.
     associatedtype Action: Sendable
 
-    /// The dependencies required to execute side effects.
-    ///
-    /// Inject API clients, databases, and other services your feature needs:
-    ///
-    /// ```swift
-    /// struct Dependency {
-    ///     var apiClient: APIClient
-    ///     var userDefaults: UserDefaults
-    /// }
-    /// ```
-    ///
-    /// Use `Void` for features with no external dependencies:
-    ///
-    /// ```swift
-    /// typealias Dependency = Void
-    /// ```
-    ///
-    /// Dependencies must be `Sendable` to safely pass to async work.
     associatedtype Dependency: Sendable
 
-    /// Processes an action and returns any resulting side effects.
-    ///
-    /// This is the core of your feature's logic. For each action:
-    /// 1. Mutate state via `context.state`
-    /// 2. Return ``Work`` describing side effects (or `.empty()` for none)
-    ///
-    /// ```swift
-    /// func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
-    ///     switch action {
-    ///     case .increment:
-    ///         context.state.count += 1
-    ///         return .empty()
-    ///
-    ///     case .fetchData:
-    ///         return .run { env in
-    ///             let data = try await env.api.fetch()
-    ///             return .dataLoaded(data)
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// - Parameters:
-    ///   - action: The action to process.
-    ///   - context: A borrowed context providing access to state mutation.
-    /// - Returns: Work describing side effects, or `.empty()` for no effects.
-    ///
-    /// - Note: The context is `borrowing` to prevent escaping. State mutations
-    ///   are synchronous and complete before this method returns.
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWorkKind
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork
 
-    /// Creates a new instance of the feature.
-    ///
-    /// The Supervisor creates a feature instance internally. Your feature
-    /// should not require any parameters for initialization:
-    ///
-    /// ```swift
-    /// struct MyFeature: FeatureProtocol {
-    ///     // No stored properties needed - state is managed by Supervisor
-    ///     init() {}
-    /// }
-    /// ```
-    ///
-    /// If your feature needs configuration, pass it through the `Dependency` type instead.
     init()
 }
 
@@ -311,5 +160,3 @@ struct AnyMutation<State> {
         }
     }
 }
-
-public protocol Cancellation: Hashable, Sendable {}
