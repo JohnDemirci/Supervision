@@ -116,7 +116,6 @@ import Foundation
 ///
 /// `FeatureProtocol` is `@MainActor` isolated. All state mutations and action
 /// processing occur on the main thread.
-@MainActor
 public protocol FeatureProtocol {
     typealias FeatureWork = Work<Action, Dependency>
 
@@ -134,6 +133,8 @@ public protocol FeatureProtocol {
 
     init()
 }
+
+extension Never: Hashable & Sendable { }
 
 extension FeatureProtocol {
     public var observationMap: ObservationMap {

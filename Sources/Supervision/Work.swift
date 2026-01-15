@@ -7,15 +7,6 @@
 
 import Foundation
 
-enum TestInput: @unchecked Sendable {
-    case taskResult(Any)              // expects Result<T, Error> boxed as Any
-    case streamValues([Any])          // expects [Element] boxed as Any
-    case streamFailure(Error)
-    case streamFinished
-}
-
-extension TaskPriority: @retroactive Hashable {}
-
 public struct Work<Output, Environment>: Sendable, Hashable {
     public enum Operation: Sendable, Hashable {
         case done
@@ -23,43 +14,6 @@ public struct Work<Output, Environment>: Sendable, Hashable {
         case run(Run)
         indirect case merge(Array<Work<Output, Environment>>)
         indirect case concatenate(Array<Work<Output, Environment>>)
-        
-        public static func == (lhs: Work<Output, Environment>.Operation, rhs: Work<Output, Environment>.Operation) -> Bool {
-            switch (lhs, rhs) {
-            case (.done, .done):
-                return true
-            case let (.cancel(l), .cancel(r)):
-                return l == r
-            case let (.run(l), .run(r)):
-                return l == r
-            case let (.merge(l), .merge(r)):
-                return l == r
-            case let (.concatenate(l), .concatenate(r)):
-                return l == r
-            default:
-                return false
-            }
-        }
-        
-        public func hash(into hasher: inout Hasher) {
-            switch self {
-            case .done:
-                hasher.combine(0)
-                hasher.combine("done")
-            case .cancel(let id):
-                hasher.combine(1)
-                hasher.combine(id)
-            case .run(let run):
-                hasher.combine(2)
-                hasher.combine(run)
-            case .merge(let works):
-                hasher.combine(3)
-                hasher.combine(works)
-            case .concatenate(let works):
-                hasher.combine(4)
-                hasher.combine(works)
-            }
-        }
     }
 
     /// Configuration for the Work
@@ -103,40 +57,10 @@ public struct Work<Output, Environment>: Sendable, Hashable {
             self.priority = priority
             self.fireAndForget = fireAndForget
         }
-
-        func with(
-            name: String?? = nil,
-            cancellationID: AnyHashableSendable?? = nil,
-            cancelInFlight: Bool? = nil,
-            fireAndForget: Bool? = nil,
-            debounce: Duration?? = nil,
-            throttle: Duration?? = nil,
-            priority: TaskPriority?? = nil
-        ) -> RunConfiguration {
-            RunConfiguration(
-                name: name ?? self.name,
-                cancellationID: cancellationID ?? self.cancellationID,
-                cancelInFlight: cancelInFlight ?? self.cancelInFlight,
-                fireAndForget: fireAndForget ?? self.fireAndForget,
-                debounce: debounce ?? self.debounce,
-                throttle: throttle ?? self.throttle,
-                priority: priority ?? self.priority
-            )
-        }
     }
 
     /// A Work operation that represents an outside work to be performed.
     public struct Run: Hashable, Sendable {
-        public static func == (lhs: Work<Output, Environment>.Run, rhs: Work<Output, Environment>.Run) -> Bool {
-            lhs.configuration == rhs.configuration &&
-            lhs.execute == rhs.execute
-        }
-        
-        public func hash(into hasher: inout Hasher) {
-            hasher.combine(execute)
-            hasher.combine(configuration)
-        }
-        
         let configuration: RunConfiguration
         let execute: ExecutionContext
         let testPlan: TestPlan?
@@ -151,44 +75,26 @@ public struct Work<Output, Environment>: Sendable, Hashable {
             self.testPlan = testPlan
         }
 
-        func with(configuration: RunConfiguration) -> Run {
-            Run(
+        public static func == (
+            lhs: Work<Output, Environment>.Run,
+            rhs: Work<Output, Environment>.Run
+        ) -> Bool {
+            lhs.configuration == rhs.configuration &&
+            lhs.execute == rhs.execute
+        }
+
+        public func hash(into hasher: inout Hasher) {
+            hasher.combine(execute)
+            hasher.combine(configuration)
+        }
+
+        func with(configuration: Work<Output, Environment>.RunConfiguration) -> Self {
+            Self(
                 configuration: configuration,
                 execute: execute,
                 testPlan: testPlan
             )
         }
-    }
-
-    struct TestPlan: @unchecked Sendable {
-        enum Kind: Hashable, Sendable, RawRepresentable {
-            init?(rawValue: String) {
-                if rawValue == "task" {
-                    self = .task
-                } else if rawValue == "stream" {
-                    self = .stream
-                } else {
-                    return nil
-                }
-            }
-            
-            var rawValue: String {
-                switch self {
-                case .task: "task"
-                case .stream: "stream"
-                }
-            }
-
-            typealias RawValue = String
-
-            case task
-            case stream
-        }
-
-        let kind: Kind
-        let expectedInputType: Any.Type
-        let isContinuous: Bool
-        let feed: @Sendable (TestInput) -> [Output]
     }
 
     public let operation: Operation
@@ -198,34 +104,9 @@ public struct Work<Output, Environment>: Sendable, Hashable {
     }
 }
 
-extension Work {
-    struct ExecutionContext: Hashable, Sendable {
-        static func == (lhs: Work<Output, Environment>.ExecutionContext, rhs: Work<Output, Environment>.ExecutionContext) -> Bool {
-            lhs.id == rhs.id
-        }
-        
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
-        
-        let id: UUID
-        let execution: @Sendable (Environment, @escaping @Sendable (Output) async -> Void) async -> Void
-        
-        init(
-            execution: @Sendable @escaping (Environment, @Sendable @escaping (Output) async -> Void) async -> Void
-        ) {
-            self.id = UUID()
-            self.execution = execution
-        }
-        
-        func callAsFunction(
-            _ environment: Environment,
-            _ completion: @escaping @Sendable (Output) async -> Void
-        ) async {
-            await execution(environment, completion)
-        }
-    }
-}
+
+
+// MARK: - Work Instantiation
 
 extension Work {
     /// No work to be done.
@@ -628,3 +509,48 @@ private extension Work.Run {
         )
     }
 }
+
+// MARK: - Work.Operation Hashable Conformance
+
+extension Work.Operation {
+    public static func == (lhs: Work<Output, Environment>.Operation, rhs: Work<Output, Environment>.Operation) -> Bool {
+        switch (lhs, rhs) {
+        case (.done, .done):
+            return true
+        case let (.cancel(l), .cancel(r)):
+            return l == r
+        case let (.run(l), .run(r)):
+            return l == r
+        case let (.merge(l), .merge(r)):
+            return l == r
+        case let (.concatenate(l), .concatenate(r)):
+            return l == r
+        default:
+            return false
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .done:
+            hasher.combine(0)
+            hasher.combine("done")
+        case .cancel(let id):
+            hasher.combine(1)
+            hasher.combine(id)
+        case .run(let run):
+            hasher.combine(2)
+            hasher.combine(run)
+        case .merge(let works):
+            hasher.combine(3)
+            hasher.combine(works)
+        case .concatenate(let works):
+            hasher.combine(4)
+            hasher.combine(works)
+        }
+    }
+}
+
+// MARK: - TaskPriority Hashable Conformance
+
+extension TaskPriority: @retroactive Hashable {}

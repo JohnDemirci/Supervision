@@ -9,113 +9,9 @@ import Foundation
 import Observation
 import OSLog
 
-/// The central coordinator for a feature's state, actions, and side effects.
-///
-/// `Supervisor` is the runtime that drives your feature. It holds the current state,
-/// dispatches actions through your feature's `process` method, and executes async work.
-///
-/// ## Overview
-///
-/// A Supervisor manages the lifecycle of a single feature:
-///
-/// ```swift
-/// struct CounterFeature: FeatureProtocol {
-///     struct State {
-///         var count = 0
-///     }
-///
-///     enum Action {
-///         case increment
-///         case decrement
-///     }
-///
-///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
-///         switch action {
-///         case .increment:
-///             context.state.count += 1
-///         case .decrement:
-///             context.state.count -= 1
-///         }
-///         return .empty()
-///     }
-/// }
-///
-/// // Create and use a Supervisor
-/// let supervisor = Supervisor<CounterFeature>(state: .init(), dependency: ())
-/// supervisor.send(.increment)
-/// print(supervisor.count)  // 1 (via @dynamicMemberLookup)
-/// ```
-///
-/// ## State Access
-///
-/// Access state properties directly via `@dynamicMemberLookup`:
-///
-/// ```swift
-/// supervisor.count      // Same as supervisor.state.count
-/// supervisor.userName   // Same as supervisor.state.userName
-/// supervisor.items      // Same as supervisor.state.items
-/// ```
-///
-/// ## Granular Observation
-///
-/// Views only re-render when the specific properties they access change:
-///
-/// ```swift
-/// // This view only re-renders when `count` changes
-/// struct CounterView: View {
-///     let supervisor: Supervisor<MyFeature>
-///     var body: some View {
-///         Text("\(supervisor.count)")  // Tracks only \.count
-///     }
-/// }
-///
-/// // This view only re-renders when `name` changes
-/// struct NameView: View {
-///     let supervisor: Supervisor<MyFeature>
-///     var body: some View {
-///         Text(supervisor.name)  // Tracks only \.name
-///     }
-/// }
-///
-/// // Mutating count does NOT re-render NameView
-/// supervisor.send(.incrementCount)
-/// ```
-///
-/// ## Bindings
-///
-/// Create SwiftUI bindings for two-way data flow:
-///
-/// ```swift
-/// // Action-based binding (recommended)
-/// TextField("Name", text: supervisor.binding(\.name, send: { .nameChanged($0) }))
-///
-/// // Direct binding (for UI-only state)
-/// Slider(value: supervisor.directBinding(\.volume))
-/// ```
-///
-/// ## Identity and Caching
-///
-/// Supervisors have an ``id`` property used by ``Board`` for caching:
-///
-/// - For `Identifiable` state, the ID is derived from `state.id`
-/// - Otherwise, a type-based ID is generated
-/// - Use ``Board`` to manage supervisor lifecycles across views
-///
-/// ## Thread Safety
-///
-/// Supervisor is `@MainActor` isolated. All state access and action dispatch
-/// must occur on the main thread. Async work in ``Work`` is executed on
-/// appropriate executors and results are dispatched back to main.
-///
-/// ## Lifecycle
-///
-/// - **Initialization**: Creates the feature instance and starts the action processing loop
-/// - **Processing**: Actions flow through `feature.process()` synchronously
-/// - **Async Work**: Work is queued and executed by the internal ``Worker``
-/// - **Deinitialization**: Cancels all pending work and stops processing
 @MainActor
 @dynamicMemberLookup
-public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
+public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
     public typealias State = Feature.State
@@ -273,6 +169,8 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable, Sendable {
      to negate this behavior instead of using dynamic member lookup we are going to be using a custom function and custom subscript.
      
      from the limited testing it looks like the view is updating correctly
+
+     \.state.person.name
      */
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
         trackAccess(for: keyPath)

@@ -5,7 +5,6 @@
 //  Created by John on 11/29/25.
 //
 
-@MainActor
 @dynamicMemberLookup
 public struct Context<State>: ~Copyable {
     @usableFromInline
