@@ -150,7 +150,7 @@ extension Supervisor {
         Binding(
             get: {
                 // Read current value with granular observation tracking
-                self[dynamicMember: keyPath]
+                self.read(keyPath)
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -362,8 +362,7 @@ extension Supervisor {
     ) -> Binding<Value> {
         Binding(
             get: {
-                // Read current value with granular observation tracking
-                self[dynamicMember: keyPath]
+                self.read(keyPath)
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -400,7 +399,7 @@ extension Supervisor {
         Binding(
             get: {
                 // Read current value with granular observation tracking
-                self[dynamicMember: keyPath]
+                self.read(keyPath)
             },
             set: { newValue, transaction in
                 // Determine which animation to use

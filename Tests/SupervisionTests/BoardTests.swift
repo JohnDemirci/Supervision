@@ -82,7 +82,7 @@ struct IdentifiableVoidFeature: FeatureProtocol {
         case nothing
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void, CancellationID> {
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         return .done
     }
 }
@@ -104,9 +104,7 @@ struct BoardTests {
             }
         
         #expect(userSupervisor === anotherSupervisor)
-        
-        try await Task.sleep(for: .seconds(3))
-        
+
         #expect(board.numberOfSupervisors == 1)
     }
     

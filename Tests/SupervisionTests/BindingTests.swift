@@ -86,9 +86,7 @@ struct UIStateFeature: FeatureProtocol {
         // No actions needed for pure UI state
     }
     
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-        return .done
-    }
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {}
 }
 
 // MARK: - Tests
@@ -113,8 +111,8 @@ struct BindingTests {
         usernameBinding.wrappedValue = "  john  "
 
         // Action processed, validation applied (trimmed)
-        #expect(supervisor.username == "john")
-        #expect(supervisor.usernameError == nil)
+        #expect(supervisor[\.username] == "john")
+        #expect(supervisor[\.usernameError] == nil)
     }
 
     @Test("action binding validates input")
@@ -126,14 +124,14 @@ struct BindingTests {
         // Set short username
         usernameBinding.wrappedValue = "ab"
 
-        #expect(supervisor.username == "ab")
-        #expect(supervisor.usernameError == "Username must be at least 3 characters")
+        #expect(supervisor[\.username] == "ab")
+        #expect(supervisor[\.usernameError] == "Username must be at least 3 characters")
 
         // Set valid username
         usernameBinding.wrappedValue = "alice"
 
-        #expect(supervisor.username == "alice")
-        #expect(supervisor.usernameError == nil)
+        #expect(supervisor[\.username] == "alice")
+        #expect(supervisor[\.usernameError] == nil)
     }
 
     @Test("action binding transforms email to lowercase")
@@ -146,8 +144,8 @@ struct BindingTests {
         emailBinding.wrappedValue = "JOHN@EXAMPLE.COM"
 
         // Email is lowercased
-        #expect(supervisor.email == "john@example.com")
-        #expect(supervisor.emailError == nil)
+        #expect(supervisor[\.email] == "john@example.com")
+        #expect(supervisor[\.emailError] == nil)
     }
 
     @Test("action binding clamps age value")
@@ -160,13 +158,13 @@ struct BindingTests {
         ageBinding.wrappedValue = 150
 
         // Age is clamped to 120
-        #expect(supervisor.age == 120)
+        #expect(supervisor[\.age] == 120)
 
         // Set age below minimum
         ageBinding.wrappedValue = -5
 
         // Age is clamped to 0
-        #expect(supervisor.age == 0)
+        #expect(supervisor[\.age] == 0)
     }
 
     @Test("action binding works with toggle")
@@ -179,11 +177,11 @@ struct BindingTests {
 
         // Toggle on
         subscriptionBinding.wrappedValue = true
-        #expect(supervisor.isSubscribed == true)
+        #expect(supervisor[\.isSubscribed] == true)
 
         // Toggle off
         subscriptionBinding.wrappedValue = false
-        #expect(supervisor.isSubscribed == false)
+        #expect(supervisor[\.isSubscribed] == false)
     }
 
     // MARK: - Direct Binding Tests
@@ -200,7 +198,7 @@ struct BindingTests {
         volumeBinding.wrappedValue = 75.5
 
         // State updated immediately, no action processing
-        #expect(supervisor.volume == 75.5)
+        #expect(supervisor[\.volume] == 75.5)
     }
 
     @Test("direct binding updates state immediately")
@@ -211,13 +209,13 @@ struct BindingTests {
 
         // Multiple rapid changes (like slider dragging)
         brightnessBinding.wrappedValue = 80
-        #expect(supervisor.brightness == 80)
+        #expect(supervisor[\.brightness] == 80)
 
         brightnessBinding.wrappedValue = 85
-        #expect(supervisor.brightness == 85)
+        #expect(supervisor[\.brightness] == 85)
 
         brightnessBinding.wrappedValue = 90
-        #expect(supervisor.brightness == 90)
+        #expect(supervisor[\.brightness] == 90)
     }
 
     @Test("direct binding works with integer selection")
@@ -230,10 +228,10 @@ struct BindingTests {
 
         // Change tab
         tabBinding.wrappedValue = 2
-        #expect(supervisor.selectedTab == 2)
+        #expect(supervisor[\.selectedTab] == 2)
 
         tabBinding.wrappedValue = 1
-        #expect(supervisor.selectedTab == 1)
+        #expect(supervisor[\.selectedTab] == 1)
     }
 
     // MARK: - Comparison Tests
@@ -268,12 +266,12 @@ struct BindingTests {
         // Action binding: transforms value
         let nameBinding = supervisor.binding(\.name, send: { .nameChanged($0) })
         nameBinding.wrappedValue = "alice"
-        #expect(supervisor.name == "ALICE")  // Transformed by action
+        #expect(supervisor[\.name] == "ALICE")  // Transformed by action
 
         // Direct binding: no transformation
         let sliderBinding = supervisor.directBinding(\.sliderValue)
         sliderBinding.wrappedValue = 42.5
-        #expect(supervisor.sliderValue == 42.5)  // Direct, no processing
+        #expect(supervisor[\.sliderValue] == 42.5)  // Direct, no processing
     }
 
     @Test("bindings read current state correctly")
@@ -314,7 +312,7 @@ struct BindingTests {
         // Set value (animation is applied via withAnimation internally)
         binding.wrappedValue = true
 
-        #expect(supervisor.isSubscribed == true)
+        #expect(supervisor[\.isSubscribed] == true)
     }
 
     @Test("direct binding with custom animation parameter")
@@ -327,7 +325,7 @@ struct BindingTests {
         // Set value (animation is applied via withAnimation internally)
         binding.wrappedValue = 75.0
 
-        #expect(supervisor.volume == 75.0)
+        #expect(supervisor[\.volume] == 75.0)
     }
 
     @Test("action binding without animation parameter")
@@ -339,7 +337,7 @@ struct BindingTests {
 
         binding.wrappedValue = 30
 
-        #expect(supervisor.age == 30)
+        #expect(supervisor[\.age] == 30)
     }
 
     @Test("direct binding without animation parameter")
@@ -351,12 +349,21 @@ struct BindingTests {
 
         binding.wrappedValue = 2
 
-        #expect(supervisor.selectedTab == 2)
+        #expect(supervisor[\.selectedTab] == 2)
     }
 
     @Test("hybrid pattern - direct binding with completion action")
     func testHybridPatternDirectBindingWithCompletionAction() async throws {
         struct VolumeFeature: FeatureProtocol {
+            func process(action: Action, context: borrowing Supervision.Context<State>) -> FeatureWork {
+                switch action {
+                case .volumeChangeCompleted(let volume):
+                    // Log, trigger haptics, save to UserDefaults, etc.
+                    context.modify(\.lastCommittedVolume, to: volume)
+                    return .done
+                }
+            }
+            
             typealias Dependency = Void
 
             struct State: Equatable {
@@ -366,15 +373,6 @@ struct BindingTests {
 
             enum Action {
                 case volumeChangeCompleted(Double)
-            }
-            
-            func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-                switch action {
-                case .volumeChangeCompleted(let volume):
-                    // Log, trigger haptics, save to UserDefaults, etc.
-                    context.modify(\.lastCommittedVolume, to: volume)
-                    return .done
-                }
             }
         }
 
@@ -388,13 +386,13 @@ struct BindingTests {
         volumeBinding.wrappedValue = 70
         volumeBinding.wrappedValue = 75
 
-        #expect(supervisor.volume == 75)
-        #expect(supervisor.lastCommittedVolume == 50) // Not yet committed
+        #expect(supervisor[\.volume] == 75)
+        #expect(supervisor[\.lastCommittedVolume] == 50) // Not yet committed
 
         // Simulate user releasing slider (onEditingChanged: false)
-        supervisor.send(.volumeChangeCompleted(supervisor.volume))
+        supervisor.send(.volumeChangeCompleted(supervisor[\.volume]))
 
-        #expect(supervisor.lastCommittedVolume == 75) // Now committed
+        #expect(supervisor[\.lastCommittedVolume] == 75) // Now committed
     }
 
     @Test("multiple bindings to same supervisor")
@@ -410,9 +408,9 @@ struct BindingTests {
         emailBinding.wrappedValue = "ALICE@EXAMPLE.COM"
         ageBinding.wrappedValue = 30
 
-        #expect(supervisor.username == "alice")
-        #expect(supervisor.email == "alice@example.com") // Lowercased
-        #expect(supervisor.age == 30)
+        #expect(supervisor[\.username] == "alice")
+        #expect(supervisor[\.email] == "alice@example.com") // Lowercased
+        #expect(supervisor[\.age] == 30)
     }
 
     @Test("binding animation parameter is optional")
@@ -426,7 +424,7 @@ struct BindingTests {
         binding1.wrappedValue = "test"
         binding2.wrappedValue = 25
 
-        #expect(supervisor.username == "test")
-        #expect(supervisor.age == 25)
+        #expect(supervisor[\.username] == "test")
+        #expect(supervisor[\.age] == 25)
     }
 }

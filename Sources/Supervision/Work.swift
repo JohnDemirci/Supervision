@@ -7,508 +7,551 @@
 
 import Foundation
 
-/// A unit of asynchronous work that produces an `Output` using an `Environment`.
-///
-/// `Work` is the effect type for the Supervision framework. It encapsulates async operations
-/// that can be cancelled, composed, and transformed using functional patterns.
-///
-/// ## Overview
-///
-/// Work represents side effects in your application—network requests, database operations,
-/// timers, and other async tasks. The Supervisor executes Work and routes the resulting
-/// actions back through your feature's `process` method.
-///
-/// ```swift
-/// func process(action: Action, context: borrowing Context<State>) -> Work<Action, Dependency> {
-///     switch action {
-///     case .fetchButtonTapped:
-///         return .run { env in
-///             let data = try await env.apiClient.fetch()
-///             return .dataLoaded(data)
-///         }
-///     case .dataLoaded(let data):
-///         context.state.data = data
-///         return .empty()
-///     }
-/// }
-/// ```
-///
-/// ## Error Handling
-///
-/// By default, errors thrown during work execution are **logged but not propagated**.
-/// No action is emitted when an unhandled error occurs. This follows the "log-by-default,
-/// opt-in recovery" pattern common in effect systems.
-///
-/// To handle errors and convert them to actions, use one of these approaches:
-///
-/// ### Using `catch` for error-only handling:
-/// ```swift
-/// Work.run { env in
-///     try await env.apiClient.fetch()
-/// }
-/// .catch { error in
-///     .fetchFailed(error.localizedDescription)
-/// }
-/// ```
-///
-/// ### Using `run(_:toAction:)` for Result-based handling (recommended):
-/// ```swift
-/// Work.run { env in
-///     try await env.apiClient.fetch()
-/// } toAction: { result in
-///     .fetchCompleted(result)
-/// }
-/// ```
-///
-/// ## Cancellation
-///
-/// Work can be tagged with a cancellation ID and cancelled later:
-///
-/// ```swift
-/// // Start cancellable work
-/// return .run { env in
-///     try await env.longRunningTask()
-/// }
-/// .cancellable(id: "my-task")
-///
-/// // Cancel it later
-/// return .cancel("my-task")
-/// ```
-///
-/// ## Composition
-///
-/// Work supports functional composition via `map` and `flatMap`:
-///
-/// ```swift
-/// Work.run { env in
-///     try await env.fetchRawData()
-/// }
-/// .map { rawData in
-///     .processedData(transform(rawData))
-/// }
-/// ```
-///
-/// - Note: `map` and `flatMap` only work on `.task` operations. Attempting to transform
-///   `.none`, `.cancellation`, or `.fireAndForget` operations will throw a `Failure`.
-public struct Work<Output, Environment, CancellationID: Cancellation>: Sendable {
-    enum Operation {
-        case none
-        case cancellation(CancellationID)
-        case fireAndForget(
-            TaskPriority?,
-            @Sendable (Environment) async throws -> Void
-        )
-        case task(
-            TaskPriority?,
-            @Sendable (Environment) async throws -> Output
-        )
-        case subscribe(
-            @Sendable (Environment) async throws -> AsyncThrowingStream<Output, Error>
-        )
+public struct Work<Output, Environment>: Sendable, Hashable {
+    public enum Operation: Sendable, Hashable {
+        case done
+        case cancel(AnyHashableSendable)
+        case run(Run)
+        indirect case merge(Array<Work<Output, Environment>>)
+        indirect case concatenate(Array<Work<Output, Environment>>)
     }
 
-    let cancellationID: CancellationID?
-    let operation: Operation
-    let onError: (@Sendable (Error) -> Output)?
+    /// Configuration for the Work
+    public struct RunConfiguration: Sendable, Hashable {
+        /// The name of the task to be executed.
+        public let name: String?
+        
+        /// Identifier for the Work that can be cancelled
+        public let cancellationID: AnyHashableSendable?
+        
+        /// Indicator if the old work already in flight should be cancelled in favor of the new work.
+        public let cancelInFlight: Bool
+        
+        /// Duration to wait before executing a task.
+        public let debounce: Duration?
+        
+        /// Duration to wait before executing another task.
+        ///
+        /// - Important: You must provide a cancellation ID.
+        public let throttle: Duration?
+        
+        /// Specification of the task priority.
+        public let priority: TaskPriority?
+        
+        public let fireAndForget: Bool
 
-    init(
-        cancellationID: CancellationID? = nil,
-        operation: Operation,
-        onError: (@Sendable (Error) -> Output)? = nil
-    ) {
+        public init(
+            name: String? = nil,
+            cancellationID: AnyHashableSendable? = nil,
+            cancelInFlight: Bool = false,
+            fireAndForget: Bool = false,
+            debounce: Duration? = nil,
+            throttle: Duration? = nil,
+            priority: TaskPriority? = nil
+        ) {
+            self.name = name
+            self.cancellationID = cancellationID
+            self.cancelInFlight = cancelInFlight
+            self.debounce = debounce
+            self.throttle = throttle
+            self.priority = priority
+            self.fireAndForget = fireAndForget
+        }
+    }
+
+    /// A Work operation that represents an outside work to be performed.
+    public struct Run: Hashable, Sendable {
+        let configuration: RunConfiguration
+        let execute: ExecutionContext
+        let testPlan: TestPlan?
+
+        init(
+            configuration: RunConfiguration = .init(),
+            execute: ExecutionContext,
+            testPlan: TestPlan? = nil
+        ) {
+            self.configuration = configuration
+            self.execute = execute
+            self.testPlan = testPlan
+        }
+
+        public static func == (
+            lhs: Work<Output, Environment>.Run,
+            rhs: Work<Output, Environment>.Run
+        ) -> Bool {
+            lhs.configuration == rhs.configuration &&
+            lhs.execute == rhs.execute
+        }
+
+        public func hash(into hasher: inout Hasher) {
+            hasher.combine(execute)
+            hasher.combine(configuration)
+        }
+
+        func with(configuration: Work<Output, Environment>.RunConfiguration) -> Self {
+            Self(
+                configuration: configuration,
+                execute: execute,
+                testPlan: testPlan
+            )
+        }
+    }
+
+    public let operation: Operation
+
+    init(operation: Operation) {
         self.operation = operation
-        self.onError = onError
-        self.cancellationID = cancellationID
     }
 }
 
-// MARK: - Factory Methods
 
-public extension Work {
-    /// Indicates there are no further actions.
-    /// Use this when there is no async operation to be done.
-    static var done: Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>.init(operation: .none)
+
+// MARK: - Work Instantiation
+
+extension Work {
+    /// No work to be done.
+    public static var done: Self {
+        Work(operation: .done)
     }
 
-    /// Creates a work unit that cancels a previously started task.
+    /// A work meant to cancel an existing Work.
     ///
-    /// Use this to cancel long-running or in-flight work:
+    /// - Parameters:
+    ///    - id: A value that conforms to the `Hashable` & `Sendable` protocols.
     ///
-    /// ```swift
-    /// case .cancelButtonTapped:
-    ///     return .cancel("search-request")
-    /// ```
+    /// - Returns: A Work that's operation is to cancel another work.
+    public static func cancel(_ id: some (Sendable & Hashable)) -> Self {
+        Work(operation: .cancel(AnyHashableSendable(value: id)))
+    }
+
+    /// Represents an async work to be performed
     ///
-    /// - Parameter id: The cancellation ID of the work to cancel.
-    ///   Must match the ID passed to ``cancellable(id:)``.
-    /// - Returns: A work unit that cancels the specified task.
-    static func cancel(_ id: CancellationID) -> Work<Output, Environment, CancellationID> {
+    /// - Parameters:
+    ///    - config: The configuration for the Work.
+    ///    - body:  A closure to perform the work. It takes and `Environment` and returns a generic `Value`
+    ///    - map: A closure that takes a `Result` for the operation and maps into Output
+    ///
+    /// - Returns: Work with a task to perfom the specified task.
+    public static func run<Value>(
+        config: RunConfiguration = .init(),
+        body: @escaping @Sendable (Environment) async throws -> Value,
+        map: @escaping @Sendable (Result<Value, Error>) -> Output
+    ) -> Self {
         Work(
-            cancellationID: id,
-            operation: .cancellation(id),
-            onError: nil
+            operation: .run(
+                Run(
+                    configuration: config,
+                    execute: ExecutionContext { env, send in
+                        do { await send(map(.success(try await body(env)))) }
+                        catch is CancellationError { return }
+                        catch { await send(map(.failure(error))) }
+                    },
+                    testPlan: isTesting() ? TestPlan(
+                        kind: .task,
+                        expectedInputType: Result<Value, Error>.self,
+                        isContinuous: false,
+                        feed: { input in
+                            guard
+                                case let .taskResult(any) = input,
+                                let typed = any as? Result<Value, Error>
+                            else { return [] }
+
+                            return [map(typed)]
+                        }
+                    ) : nil
+                )
+            )
         )
     }
 
-    /// Creates a work unit that executes without producing an action.
-    ///
-    /// Use this for side effects where you don't need a response:
-    ///
-    /// ```swift
-    /// case .logEvent(let event):
-    ///     return .fireAndForget { env in
-    ///         await env.analytics.log(event)
-    ///     }
-    /// ```
+    /// Work that's job is to subscribe to a stream and listen for the values.
     ///
     /// - Parameters:
-    ///   - priority: The priority of the task. Defaults to `nil` (inherits from context).
-    ///   - body: The async operation to execute. Errors are logged but not propagated.
-    /// - Returns: A work unit that executes the operation without emitting an action.
-    static func fireAndForget(
-        priority: TaskPriority? = nil,
-        _ body: @Sendable @escaping (Environment) async throws -> Void
-    ) -> Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>(
-            operation: .fireAndForget(priority, body)
+    ///    - config: configuration for the Work's task.
+    ///    - stream: The closure that returns the desired stream. The return value needs to conform to AsyncSequence
+    ///    - map: A closure that takes the result and maps into an Output to be executed.
+    ///
+    /// - Returns: Work for subscription.
+    public static func subscribe<Value: Sendable, S>(
+        config: RunConfiguration = .init(fireAndForget: true),
+        stream: @escaping @Sendable (Environment) async throws -> S,
+        map: @escaping @Sendable (Result<Value, Error>) -> Output
+    ) -> Self
+    where
+        S: AsyncSequence & Sendable,
+        S.Element == Value
+    {
+        return Work(
+            operation: .run(
+                Run(
+                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true),
+                    execute: ExecutionContext { env, send in
+                        do {
+                            let sequence = try await stream(env)
+                            for try await value in sequence {
+                                await send(map(.success(value)))
+                            }
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            await send(map(.failure(error)))
+                        }
+                    },
+                    testPlan: isTesting() ? TestPlan(
+                        kind: .stream,
+                        expectedInputType: Value.self,
+                        isContinuous: true,
+                        feed: { input in
+                            switch input {
+                            case let .streamValues(values):
+                                return values.compactMap { $0 as? Value }.map { map(.success($0)) }
+                            case let .streamFailure(error):
+                                return [map(.failure(error))]
+                            case .streamFinished, .taskResult:
+                                return []
+                            }
+                        }
+                    ) : nil
+                )
+            )
         )
     }
 
-    /// Creates a work unit that executes an operation and transforms the result.
-    ///
-    /// This is the **recommended** approach for handling both success and failure cases.
-    /// The `toAction` closure receives a `Result` that you can pattern match or pass directly:
-    ///
-    /// ```swift
-    /// case .fetchButtonTapped:
-    ///     return .run { env in
-    ///         try await env.apiClient.fetchUsers()
-    ///     } toAction: { result in
-    ///         .usersResponse(result)
-    ///     }
-    ///
-    /// case .usersResponse(.success(let users)):
-    ///     context.state.users = users
-    ///     return .empty()
-    ///
-    /// case .usersResponse(.failure(let error)):
-    ///     context.state.error = error.localizedDescription
-    ///     return .empty()
-    /// ```
+    /// Creates a work to perform a task and forget about it.
     ///
     /// - Parameters:
-    ///   - priority: The priority of the task. Defaults to `nil` (inherits from context).
-    ///   - body: The async operation that produces a value or throws an error.
-    ///   - toAction: A closure that transforms the `Result` into an action.
-    /// - Returns: A work unit that executes the operation and emits the transformed action.
-    static func run<Value>(
-        priority: TaskPriority? = nil,
-        _ body: @Sendable @escaping (Environment) async throws -> Value,
-        toAction: @Sendable @escaping (Result<Value, Error>) -> Output
-    ) -> Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>(
-            operation: .task(priority) { env in
-                do {
-                    let value = try await body(env)
-                    return toAction(.success(value))
-                } catch {
-                    return toAction(.failure(error))
-                }
-            }
-        )
-    }
-
-    /// Creates a work unit that executes an operation and returns the result directly.
+    ///    - config: The configuration for the Work.
+    ///    - body:  A closure to perform the work. It takes and `Environment` and returns a generic `Value`
     ///
-    /// Use this when the operation directly produces an action:
-    ///
-    /// ```swift
-    /// case .fetchButtonTapped:
-    ///     return .run { env in
-    ///         let users = try await env.apiClient.fetchUsers()
-    ///         return .usersLoaded(users)
-    ///     }
-    /// ```
-    ///
-    /// - Important: If the operation throws an error, it is **logged but not propagated**.
-    ///   No action will be emitted. Use ``catch(_:)`` or ``run(priority:_:toAction:)``
-    ///   to handle errors explicitly.
-    ///
-    /// - Parameters:
-    ///   - priority: The priority of the task. Defaults to `nil` (inherits from context).
-    ///   - body: The async operation that produces an action or throws an error.
-    /// - Returns: A work unit that executes the operation and emits the resulting action.
-    static func run(
-        priority: TaskPriority? = nil,
-        _ body: @Sendable @escaping (Environment) async throws -> Output
-    ) -> Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>(operation: .task(priority, body))
-    }
-
-    /// Creates work that subscribes to an async sequence and emits actions over time.
-    ///
-    /// Use this to create long-running subscriptions to streams of data like:
-    /// - WebSocket connections
-    /// - Database change notifications
-    /// - Timer events
-    /// - Sensor data streams
-    ///
-    /// ## Example: Timer Subscription
-    ///
-    /// ```swift
-    /// case .startTimer:
-    ///     return .subscribe(cancellationID: "timer") { env in
-    ///         AsyncStream { continuation in
-    ///             Task {
-    ///                 while !Task.isCancelled {
-    ///                     try await Task.sleep(for: .seconds(1))
-    ///                     continuation.yield(.tick)
-    ///                 }
-    ///                 continuation.finish()
-    ///             }
-    ///         }
-    ///     }
-    /// ```
-    ///
-    /// ## Example: NotificationCenter as AsyncSequence
-    ///
-    /// ```swift
-    /// case .observeKeyboardChanges:
-    ///     return .subscribe(cancellationID: "keyboard") { env in
-    ///         NotificationCenter.default
-    ///             .notifications(named: UIResponder.keyboardWillShowNotification)
-    ///             .map { notification in
-    ///                 .keyboardWillShow(notification)
-    ///             }
-    ///     }
-    /// ```
-    ///
-    /// - Important: Subscribe work **requires** a `cancellationID`. Without one,
-    ///   the subscription will be ignored and a warning logged.
-    ///
-    /// - Note: The subscription runs until:
-    ///   - The sequence finishes naturally
-    ///   - The task is cancelled via `.cancel(cancellationID)`
-    ///   - The worker/supervisor is deallocated
-    ///
-    /// - Parameters:
-    ///   - cancellationID: Required identifier for cancelling the subscription
-    ///   - body: A closure that creates an async sequence from the environment
-    /// - Returns: A work unit that subscribes to the async sequence
-    static func subscribe(
-        cancellationID: CancellationID,
-        _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Output, Error>
-    ) -> Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>.init(
-            cancellationID: cancellationID,
-            operation: .subscribe({ env in
-                try await body(env)
-            }),
-            onError: nil
+    /// - Returns: A fire and forget type of Work.
+    public static func fireAndForget(
+        config: RunConfiguration = .init(fireAndForget: true),
+        body: @escaping @Sendable (Environment) async throws -> Void
+    ) -> Self {
+        Work(
+            operation: .run(
+                Run(
+                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true),
+                    execute: ExecutionContext { env, _ in
+                        do { try await body(env) }
+                        catch { return }
+                    },
+                    testPlan: nil
+                )
+            )
         )
     }
     
-    static func subscribe<Value>(
-        cancellationID: CancellationID? = nil,
-        _ body: @Sendable @escaping (Environment) async throws -> AsyncThrowingStream<Value, Error>,
-        toAction: @Sendable @escaping (Result<Value, Error>) -> Output
-    ) -> Work<Output, Environment, CancellationID> where Output: Sendable, Value: Sendable {
-        Work<Output, Environment, CancellationID>(
-            cancellationID: cancellationID,
-            operation: .subscribe({ env in
-                let currentStream = try await body(env)
-                return AsyncThrowingStream { continuation in
-                    Task {
-                        do {
-                            for try await value in currentStream {
-                                continuation.yield(toAction(.success(value)))
-                            }
-                            continuation.finish()
-                        } catch {
-                            continuation.yield(toAction(.failure(error)))
-                            continuation.finish(throwing: error)
-                        }
-                    }
-                }
-            }),
-            onError: nil
-        )
+    /// Runs multiple works concurrently and waits all of them the finish at the end.
+    ///
+    /// - Note: Works that fail or throw error do not effect the other works.
+    ///
+    /// - Parameters:
+    ///    - works: A variadic list of ``Work<Output, Environment>``
+    ///
+    /// - Returns: A ``Work<Output, Environment>`` merged with the provided works.
+    public static func merge(_ works: Work<Output, Environment>...) -> Self {
+        merge(works)
+    }
+
+    /// Runs multiple works concurrently and waits all of them the finish at the end.
+    ///
+    /// - Note: Works that fail or throw error do not effect the other works.
+    ///
+    /// - Parameters:
+    ///    - works: An array of ``Work<Output, Environment>``
+    ///
+    /// - Returns: A ``Work<Output, Environment>`` merged with the provided works.
+    public static func merge(_ works: [Work<Output, Environment>]) -> Self {
+        let nonEmptyWorks = works.filter {
+            if case .done = $0.operation { return false }
+            return true
+        }
+
+        if nonEmptyWorks.isEmpty { return .done }
+        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+
+        return Work(operation: .merge(nonEmptyWorks))
+    }
+
+    /// A Work type that runs multiple works sequentially.
+    ///
+    /// - Note: Upon failure, the remaining works will not be fired off.
+    ///
+    /// - Parameters:
+    ///    - works: A variadic list of ``Work<Output, Environment>``
+    ///
+    /// - Returns: ``Work<Output, Environment>`` containing the provided works to be run sequentially.
+    public static func concatenate(_ works: Work<Output, Environment>...) -> Self {
+        concatenate(works)
+    }
+
+    /// A Work type that runs multiple works sequentially.
+    ///
+    /// - Note: Upon failure, the remaining works will not be fired off.
+    ///
+    /// - Parameters:
+    ///    - works: An array of ``Work<Output, Environment>``
+    ///
+    /// - Returns: ``Work<Output, Environment>`` containing the provided works to be run sequentially.
+    public static func concatenate(_ works: [Work<Output, Environment>]) -> Self {
+        let nonEmptyWorks = works.filter {
+            if case .done = $0.operation { return false }
+            return true
+        }
+
+        if nonEmptyWorks.isEmpty { return .done }
+        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+
+        return Work(operation: .concatenate(nonEmptyWorks))
     }
 }
 
-// MARK: - Transformations
-
-public extension Work {
-    /// Transforms the output of this work unit.
+extension Work {
+    /// Attaches a name to the Work's task.
     ///
-    /// Use `map` to transform the successful output into a different type:
+    /// - Parameters:
+    ///    - name: The new name of the Work's task.
     ///
-    /// ```swift
-    /// Work.run { env in
-    ///     try await env.apiClient.fetchUserData()
-    /// }
-    /// .map { userData in
-    ///     .userProfileLoaded(UserProfile(from: userData))
-    /// }
-    /// ```
+    /// - Returns: Work with a modified name for its Task.
+    public func named(_ name: String) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(name: name))
+        }
+    }
+
+    /// Attaches an identifier to the work to be cancelled later when invoked.
     ///
-    /// - Parameter transform: A closure that transforms the output into a new type.
-    /// - Returns: A new work unit that produces the transformed output.
-    /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
-    func map<NewOutput>(
-        _ transform: @Sendable @escaping (Output) -> NewOutput
-    ) -> Work<NewOutput, Environment, CancellationID> where Output: Sendable, NewOutput: Sendable {
-        switch operation {
-        case .none:
-            preconditionFailure("Attempting to map a non-task work unit")
-
-        case .cancellation:
-            preconditionFailure("Attempting to map a cancellation work unit")
-
-        case .fireAndForget:
-            preconditionFailure("Attempting to map a fire-and-forget work unit")
-
-        case let .task(priority, work):
-            return Work<NewOutput, Environment, CancellationID>(
-                cancellationID: cancellationID,
-                operation: .task(priority) { env in
-                    let output = try await work(env)
-                    return transform(output)
-                },
-                onError: nil
-            )
-            
-        case let .subscribe(sequence):
-            return Work<NewOutput, Environment, CancellationID>(
-                cancellationID: self.cancellationID,
-                operation: .subscribe({ env in
-                    let originalStream = try await sequence(env)
-                    return AsyncThrowingStream<NewOutput, Error> { continuation in
-                        Task {
-                            do {
-                                for try await element in originalStream {
-                                    continuation.yield(transform(element))
-                                }
-                                continuation.finish()
-                            } catch {
-                                continuation.finish(throwing: error)
-                            }
-                        }
-                    }
-                }),
-                onError: nil
+    /// - Parameters:
+    ///    - id: A value that conforms to the `Sendable` & `Hashable` protocols.
+    ///    - cancelInFlight: boolean value to tell the system if there is a new work while there is an existing work in flight whether to cancel that work or not. if it is set to true the new work is prioritized, if it is false, the new work will be swallowen prioritizing the work in flight.
+    public func cancellable(
+        id: some (Sendable & Hashable),
+        cancelInFlight: Bool = false
+    ) -> Self {
+        switch self.operation {
+        case .merge, .concatenate:
+            assertionFailure("cannot have a singular ID when merging or concatenating works")
+            return self
+        default:
+            break
+        }
+        
+        return modifyRun { run in
+            run.with(
+                configuration: run.configuration.with(
+                    cancellationID: AnyHashableSendable(value: id),
+                    cancelInFlight: cancelInFlight
+                )
             )
         }
     }
 
-    /// Provides error handling for this work unit.
+    /// Updates the priortiy of the Task for the Work.
     ///
-    /// When work throws an error and no `catch` handler is provided, the error is logged
-    /// and no action is emitted. Use this method to transform errors into actions:
+    /// - Note: This function only updates if the Work operation is ``Work.Operation.run``, ``Work.Operation.concatenate``, ``Work.Operation.merge``
     ///
-    /// ```swift
-    /// Work.run { env in
-    ///     try await env.apiClient.fetchUsers()
-    /// }
-    /// .catch { error in
-    ///     .fetchFailed(error.localizedDescription)
-    /// }
-    /// ```
+    /// - Parameters:
+    ///    - priority: The task priority.
     ///
-    /// For handling both success and failure, consider using ``run(priority:_:toAction:)`` instead.
+    /// - Returns: A work with the updated priority.
+    public func priority(_ priority: TaskPriority) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(priority: priority))
+        }
+    }
+
+    /// Adds throttle to the Work
     ///
-    /// - Parameter transform: A closure that converts an error into an output action.
-    /// - Returns: A new work unit with the error handler attached.
-    /// - Note: The `catch` handler is only invoked for `.task` operations.
-    ///   For `.fireAndForget`, errors are always logged silently.
-    func `catch`(
-        _ transform: @Sendable @escaping (Error) -> Output
-    ) -> Work<Output, Environment, CancellationID> {
-        Work<Output, Environment, CancellationID>(
-            cancellationID: cancellationID,
-            operation: operation,
-            onError: { error in
-                transform(error)
+    /// - Important: You must provide a an id using `cancellable` otherwise this function has not throttle effect.
+    ///
+    /// - Parameters:
+    ///    - duration: The duration before making able to make another network request.
+    ///
+    /// - Returns: A throttled Work
+    public func throttle(for duration: Duration) -> Self {
+        modifyRun { run in
+            assert(run.configuration.cancellationID != nil, "throttle is only valid for cancellable works")
+            return run.with(configuration: run.configuration.with(throttle: duration))
+        }
+    }
+
+    /// Debounces the execution of the work
+    ///
+    /// - Parameters:
+    ///    - duration: time duration to debounce
+    ///
+    /// - Returns: A Work do be debounced before execution
+    public func debounce(for duration: Duration) -> Self {
+        modifyRun { run in
+            run.with(configuration: run.configuration.with(debounce: duration))
+        }
+    }
+
+    /// Transforms the current work with an Output to a new work with a new Output
+    ///
+    /// - Parameters:
+    ///    - transform: Closure that takes output and returns a new output
+    ///
+    /// - Returns: A new Work<NewOutput, Environment>.
+    public func map<NewOutput>(
+        _ transform: @escaping @Sendable (Output) -> NewOutput
+    ) -> Work<NewOutput, Environment> {
+        switch operation {
+        case .done:
+            return .done
+        case .cancel(let id):
+            return .cancel(id)
+        case .merge(let works):
+            return Work<NewOutput, Environment>.merge(
+                Work.map(from: works, transform: transform)
+            )
+        case .concatenate(let works):
+            return Work<NewOutput, Environment>.concatenate(
+                Work.map(from: works, transform: transform)
+            )
+        case .run(let run):
+            return Work<NewOutput, Environment>(
+                operation: .run(
+                    Run.map(from: run, transform: transform)
+                )
+            )
+        }
+    }
+}
+
+extension Work where Output: Sendable {
+    /// Creates a work for an `Output` to be immediately sent.
+    ///
+    /// - Parameters:
+    ///    - output: Action to feed.
+    ///
+    /// - Returns: Work for the given output
+    public static func send(_ output: Output) -> Self {
+        Work(
+            operation: .run(
+                Run(
+                    configuration: .init(),
+                    execute: ExecutionContext { _, send in
+                        await send(output)
+                    },
+                    testPlan: TestPlan(
+                        kind: .task,
+                        expectedInputType: Void.self,
+                        isContinuous: false,
+                        feed: { _ in [output] }
+                    )
+                )
+            )
+        )
+    }
+}
+
+private extension Work {
+    static func map<OldOutput, NewOutput>(
+        from olderWorks: [Work<OldOutput, Environment>],
+        transform: @Sendable @escaping (OldOutput) -> NewOutput
+    ) -> [Work<NewOutput, Environment>] {
+        olderWorks.map { olderWork in
+            olderWork.map { olderOutput in
+                transform(olderOutput)
+            }
+        }
+    }
+    
+    func modifyRun(_ transform: (Run) -> Run) -> Self {
+        return switch operation {
+        case .run(let run):
+            Work(operation: .run(transform(run)))
+
+        case .merge(let works):
+            Work(operation: .merge(works.map { $0.modifyRun(transform) }))
+
+        case .concatenate(let works):
+            Work(operation: .concatenate(works.map { $0.modifyRun(transform) }))
+
+        case .done, .cancel:
+            self
+        }
+    }
+}
+
+private extension Work.Run {
+    static func map<OldOutput, NewOutput>(
+        from run: Work<OldOutput, Environment>.Run,
+        transform: @Sendable @escaping (OldOutput) -> NewOutput
+    ) -> Work<NewOutput, Environment>.Run {
+        Work<NewOutput,Environment>.Run(
+            configuration: Work<NewOutput,
+            Environment>.RunConfiguration(
+                name: run.configuration.name,
+                cancellationID: run.configuration.cancellationID,
+                cancelInFlight: run.configuration.cancelInFlight,
+                fireAndForget: run.configuration.fireAndForget,
+                debounce: run.configuration.debounce,
+                throttle: run.configuration.throttle,
+                priority: run.configuration.priority
+            ),
+            execute: Work<NewOutput, Environment>.ExecutionContext { env, send in
+                await run.execute(env) { output in
+                    await send(transform(output))
+                }
+            },
+            testPlan: run.testPlan.map { currentPlan in
+                Work<NewOutput, Environment>.TestPlan(
+                    kind: Work<NewOutput, Environment>.TestPlan.Kind(rawValue: currentPlan.kind.rawValue)!,
+                    expectedInputType: currentPlan.expectedInputType,
+                    isContinuous: currentPlan.isContinuous,
+                    feed: { input in
+                        currentPlan.feed(input).map(transform)
+                    }
+                )
             }
         )
     }
+}
 
-    /// Chains this work unit with another that depends on its output.
-    ///
-    /// Use `flatMap` when one async operation depends on the result of another:
-    ///
-    /// ```swift
-    /// Work.run { env in
-    ///     try await env.authClient.login()
-    /// }
-    /// .flatMap { token in
-    ///     Work.run { env in
-    ///         try await env.apiClient.fetchProfile(token: token)
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// - Parameter transform: A closure that takes the output and returns a new work unit.
-    /// - Returns: A new work unit that chains both operations.
-    /// - Throws: ``Failure`` if called on `.none`, `.cancellation`, or `.fireAndForget` operations.
-    /// - Precondition: The returned work must be a `.task` operation.
-    func flatMap<NewOutput>(
-        _ transform: @Sendable @escaping (Output) -> Work<NewOutput, Environment, CancellationID>
-    ) -> Work<NewOutput, Environment, CancellationID> {
-        switch operation {
-        case .none:
-            preconditionFailure("Attempting to flatMap a none work unit")
+// MARK: - Work.Operation Hashable Conformance
 
-        case .cancellation:
-            preconditionFailure("Attempting to flatMap a cancellation work unit")
-
-        case .fireAndForget:
-            preconditionFailure("Attempting to flatMap a fireAndForget work unit")
-
-        case .subscribe:
-            preconditionFailure("Attempting to flat map a subscribe work unit")
-
-        case let .task(priority, work):
-            return Work<NewOutput, Environment, CancellationID>(
-                operation: .task(priority) { env in
-                    let newWork = try await transform(work(env))
-
-                    switch newWork.operation {
-                    case .none, .cancellation, .fireAndForget, .subscribe:
-                        preconditionFailure("Cannot flatMap into a non-task work unit")
-                    case let .task(_, action):
-                        return try await action(env)
-                    }
-                }
-            )
+extension Work.Operation {
+    public static func == (lhs: Work<Output, Environment>.Operation, rhs: Work<Output, Environment>.Operation) -> Bool {
+        switch (lhs, rhs) {
+        case (.done, .done):
+            return true
+        case let (.cancel(l), .cancel(r)):
+            return l == r
+        case let (.run(l), .run(r)):
+            return l == r
+        case let (.merge(l), .merge(r)):
+            return l == r
+        case let (.concatenate(l), .concatenate(r)):
+            return l == r
+        default:
+            return false
         }
     }
 
-    /// Adds a cancellation ID to this work unit.
-    ///
-    /// Tag work with an ID so it can be cancelled later using ``cancel(_:)``:
-    ///
-    /// ```swift
-    /// // Start a cancellable search request
-    /// case .searchQueryChanged(let query):
-    ///     return .run { env in
-    ///         try await env.searchClient.search(query)
-    ///     }
-    ///     .cancellable(id: "search")
-    ///
-    /// // Cancel it when the user clears the search
-    /// case .searchCleared:
-    ///     return .cancel("search")
-    /// ```
-    ///
-    /// - Parameter id: A unique identifier for this work unit.
-    /// - Returns: A new work unit with the cancellation ID attached.
-    /// - Note: If work with the same ID is already running, the new work will be dropped
-    ///   and a warning will be logged. Cancel existing work first if you want to replace it.
-    func cancellable(id: CancellationID) -> Work<Output, Environment, CancellationID> {
-        Work(cancellationID: id, operation: operation, onError: onError)
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .done:
+            hasher.combine(0)
+            hasher.combine("done")
+        case .cancel(let id):
+            hasher.combine(1)
+            hasher.combine(id)
+        case .run(let run):
+            hasher.combine(2)
+            hasher.combine(run)
+        case .merge(let works):
+            hasher.combine(3)
+            hasher.combine(works)
+        case .concatenate(let works):
+            hasher.combine(4)
+            hasher.combine(works)
+        }
     }
 }
 
-extension Never: Cancellation {}
+// MARK: - TaskPriority Hashable Conformance
+
+extension TaskPriority: @retroactive Hashable {}

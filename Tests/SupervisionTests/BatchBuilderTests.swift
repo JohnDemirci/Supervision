@@ -41,25 +41,13 @@ private func withBatchBuilder<T>(
 @MainActor
 @Suite("BatchBuilder")
 struct BatchBuilderTests {
-    @Test("Read values via dynamic member lookup")
-    func readValues() async throws {
-        var state = TestState()
-
-        withBatchBuilder(state: &state) { batch in
-            #expect(batch.name.wrappedValue == "John")
-            #expect(batch.lastName.wrappedValue == "Demirci")
-            #expect(batch.age.wrappedValue == 30)
-            #expect(batch.isActive.wrappedValue == true)
-        }
-    }
-
     @Test("Set values via dynamic member lookup")
     func setValues() async throws {
         var state = TestState()
 
         withBatchBuilder(state: &state) { batch in
-            batch.name.wrappedValue = "Jane"
-            batch.age.wrappedValue = 25
+            batch.set(\.name, to: "Jane")
+            batch.set(\.age, to: 25)
         }
 
         #expect(state.name == "Jane")
@@ -71,10 +59,10 @@ struct BatchBuilderTests {
         var state = TestState()
 
         withBatchBuilder(state: &state) { batch in
-            batch.name.wrappedValue = "Alice"
-            batch.lastName.wrappedValue = "Smith"
-            batch.age.wrappedValue = 28
-            batch.isActive.wrappedValue = false
+            batch.set(\.name, to: "Alice")
+            batch.set(\.lastName, to: "Smith")
+            batch.set(\.age, to: 28)
+            batch.set(\.isActive, to: false)
         }
 
         #expect(state.name == "Alice")
@@ -83,31 +71,13 @@ struct BatchBuilderTests {
         #expect(state.isActive == false)
     }
 
-    @Test("Nested property access")
-    func nestedPropertyAccess() async throws {
-        var state = TestState()
-
-        withBatchBuilder(state: &state) { batch in
-            // Read nested
-            #expect(batch.profile.bio.wrappedValue == "Hello")
-            #expect(batch.profile.website.wrappedValue == "example.com")
-
-            // Write nested
-            batch.profile.bio.wrappedValue = "Updated bio"
-            batch.profile.website.wrappedValue = "new-site.com"
-        }
-
-        #expect(state.profile.bio == "Updated bio")
-        #expect(state.profile.website == "new-site.com")
-    }
-
     @Test("Read then modify same property")
     func readThenModify() async throws {
         var state = TestState(age: 30)
 
+        let currentAge = state.age
         withBatchBuilder(state: &state) { batch in
-            let currentAge = batch.age.wrappedValue
-            batch.age.wrappedValue = currentAge + 1
+            batch.set(\.age, to: currentAge + 1)
         }
 
         #expect(state.age == 31)
@@ -118,9 +88,9 @@ struct BatchBuilderTests {
         var state = TestState(name: "Original")
 
         withBatchBuilder(state: &state) { batch in
-            batch.name.wrappedValue = "Updated"
-            // Read back immediately - should see updated value
-            #expect(batch.name.wrappedValue == "Updated")
+            batch.set(\.name, to: "Updated")
         }
+
+        #expect(state.name == "Updated")
     }
 }

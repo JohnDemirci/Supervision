@@ -57,8 +57,8 @@ struct EquatableChangeDetectionTests {
                 context.modify(\.count, transform)
             case .batchUpdate(let count, let name):
                 context.modify { batch in
-                    batch.count.wrappedValue = count
-                    batch.name.wrappedValue = name
+                    batch.set(\.count, to: count)
+                    batch.set(\.name, to: name)
                 }
             }
             return .done
@@ -254,7 +254,7 @@ struct EquatableChangeDetectionTests {
 
         // The state should still be 42, and importantly,
         // SwiftUI observation should not have been triggered
-        #expect(supervisor.count == 42)
+        #expect(supervisor[\.count] == 42)
     }
 
     @Test("Supervisor triggers observation when setting different value")
@@ -266,7 +266,7 @@ struct EquatableChangeDetectionTests {
 
         supervisor.send(.setCount(100))
 
-        #expect(supervisor.count == 100)
+        #expect(supervisor[\.count] == 100)
     }
 
     @Test("Batch mutations trigger for each mutation")
@@ -279,8 +279,8 @@ struct EquatableChangeDetectionTests {
         // Batch update
         supervisor.send(.batchUpdate(count: 10, name: "Changed"))
 
-        #expect(supervisor.count == 10)
-        #expect(supervisor.name == "Changed")
+        #expect(supervisor[\.count] == 10)
+        #expect(supervisor[\.name] == "Changed")
     }
 
     @Test("Multiple same-value mutations do not accumulate observations")
@@ -295,7 +295,7 @@ struct EquatableChangeDetectionTests {
             supervisor.send(.setCount(0))
         }
 
-        #expect(supervisor.count == 0)
+        #expect(supervisor[\.count] == 0)
     }
 
     // MARK: - Edge cases

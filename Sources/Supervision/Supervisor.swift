@@ -9,115 +9,9 @@ import Foundation
 import Observation
 import OSLog
 
-/// The central coordinator for a feature's state, actions, and side effects.
-///
-/// `Supervisor` is the runtime that drives your feature. It holds the current state,
-/// dispatches actions through your feature's `process` method, and executes async work.
-///
-/// ## Overview
-///
-/// A Supervisor manages the lifecycle of a single feature:
-///
-/// ```swift
-/// struct CounterFeature: FeatureProtocol {
-///     struct State {
-///         var count = 0
-///     }
-///
-///     enum Action {
-///         case increment
-///         case decrement
-///     }
-///
-///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
-///         switch action {
-///         case .increment:
-///             context.state.count += 1
-///         case .decrement:
-///             context.state.count -= 1
-///         }
-///         return .empty()
-///     }
-/// }
-///
-/// // Create and use a Supervisor
-/// let supervisor = Supervisor<CounterFeature>(state: .init(), dependency: ())
-/// supervisor.send(.increment)
-/// print(supervisor.count)  // 1 (via @dynamicMemberLookup)
-/// ```
-///
-/// ## State Access
-///
-/// Access state properties directly via `@dynamicMemberLookup`:
-///
-/// ```swift
-/// supervisor.count      // Same as supervisor.state.count
-/// supervisor.userName   // Same as supervisor.state.userName
-/// supervisor.items      // Same as supervisor.state.items
-/// ```
-///
-/// ## Granular Observation
-///
-/// Views only re-render when the specific properties they access change:
-///
-/// ```swift
-/// // This view only re-renders when `count` changes
-/// struct CounterView: View {
-///     let supervisor: Supervisor<MyFeature>
-///     var body: some View {
-///         Text("\(supervisor.count)")  // Tracks only \.count
-///     }
-/// }
-///
-/// // This view only re-renders when `name` changes
-/// struct NameView: View {
-///     let supervisor: Supervisor<MyFeature>
-///     var body: some View {
-///         Text(supervisor.name)  // Tracks only \.name
-///     }
-/// }
-///
-/// // Mutating count does NOT re-render NameView
-/// supervisor.send(.incrementCount)
-/// ```
-///
-/// ## Bindings
-///
-/// Create SwiftUI bindings for two-way data flow:
-///
-/// ```swift
-/// // Action-based binding (recommended)
-/// TextField("Name", text: supervisor.binding(\.name, send: { .nameChanged($0) }))
-///
-/// // Direct binding (for UI-only state)
-/// Slider(value: supervisor.directBinding(\.volume))
-/// ```
-///
-/// ## Identity and Caching
-///
-/// Supervisors have an ``id`` property used by ``Board`` for caching:
-///
-/// - For `Identifiable` state, the ID is derived from `state.id`
-/// - Otherwise, a type-based ID is generated
-/// - Use ``Board`` to manage supervisor lifecycles across views
-///
-/// ## Thread Safety
-///
-/// Supervisor is `@MainActor` isolated. All state access and action dispatch
-/// must occur on the main thread. Async work in ``Work`` is executed on
-/// appropriate executors and results are dispatched back to main.
-///
-/// ## Lifecycle
-///
-/// - **Initialization**: Creates the feature instance and starts the action processing loop
-/// - **Processing**: Actions flow through `feature.process()` synchronously
-/// - **Async Work**: Work is queued and executed by the internal ``Worker``
-/// - **Deinitialization**: Cancels all pending work and stops processing
 @MainActor
-@dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
-    public typealias CancellationID = Feature.CancellationID
     public typealias Dependency = Feature.Dependency
     public typealias State = Feature.State
 
@@ -127,8 +21,8 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
     private nonisolated let logger: Logger
 
-    private let actionContinuation: AsyncStream<Work<Action, Dependency, CancellationID>>.Continuation
-    private let actionStream: AsyncStream<Work<Action, Dependency, CancellationID>>
+    private let actionContinuation: AsyncStream<Feature.FeatureWork>.Continuation
+    private let actionStream: AsyncStream<Feature.FeatureWork>
     private let dependency: Dependency
 
     /*
@@ -146,7 +40,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
      I did not want to add too many responsibilities onto Supervisor.
      Worker is an actor that performs the Side effects and returns the results to the Supervisor
      */
-    private let worker: Worker<Action, Dependency, CancellationID>
+    private let worker: Worker<Action, Dependency>
 
     /*
      sequentially handling async work
@@ -196,7 +90,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
         self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: Work<Action, Dependency, CancellationID>.self,
+            of: Feature.FeatureWork.self,
             bufferingPolicy: .unbounded
         )
 
@@ -241,29 +135,27 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     }
 
     /*
-     this is the public public which consumers of this architecture use to access the state amd enable observation.
+     it looks like the observation does not work correctly with dynamic member lookup when we are observing nested keypaths.
+     
+     from what i gathered it looks like the compiler cannot determine that at sn optimized level and therefore ignore it it only viewed as the parent keypath not the nested ones so when a child keypath gets updated the parent is not being updated
+     
+     to negate this behavior instead of using dynamic member lookup we are going to be using a custom function and custom subscript.
+     
+     from the limited testing it looks like the view is updating correctly
 
-     trackAccess(for: keyPath) function references a class annotated with the @Observable macro
-
-     when a swiftui view is accessing the keypath, the observvation machinery in swiftui and the observation framework sees that there's an interaction with an @Observable class, in this case, it is the ObservationToken.
-
-     _ = token(for: keyPath).version
-
-     when swiftui's body re-evaluate, it checks if the version number corresponding to the keypath changes.
-
-     in a way the current implementation is similar to doing something like this
-
-     withObservationTracking {
-         _ = token(for: keyPath).version
-     } onChange: {
-         ...
-     }
-
-     because that particular keypath is associated with the observation token, the mutation notifications for the keypath will cause the re-render
+     \.state.person.name
      */
-    public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
+
+    @inline(__always)
+    public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
         trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
+    }
+
+    @inline(__always)
+    public func read<T>(_ keypath: KeyPath<State, T>) -> T {
+        trackAccess(for: keypath)
+        return _state[keyPath: keypath]
     }
 }
 
@@ -378,55 +270,6 @@ extension Supervisor {
 }
 
 extension Supervisor {
-    /// Dispatches an action to the feature for processing.
-    ///
-    /// This is the primary way to trigger state changes and side effects. The action
-    /// flows through your feature's `process(action:context:)` method synchronously,
-    /// and any returned ``Work`` is scheduled for async execution.
-    ///
-    /// ```swift
-    /// // Simple action dispatch
-    /// supervisor.send(.increment)
-    ///
-    /// // Action with associated value
-    /// supervisor.send(.userNameChanged("John"))
-    /// ```
-    ///
-    /// ## Processing Flow
-    ///
-    /// 1. Action is passed to `feature.process(action:context:)`
-    /// 2. Feature mutates state via `context.state`
-    /// 3. Feature returns ``Work`` describing side effects
-    /// 4. Work is executed:
-    ///    - `.empty()`: No action taken
-    ///    - `.cancel(id)`: Cancels running work with that ID
-    ///    - `.run { }`: Queued for async execution
-    ///    - `.fireAndForget { }`: Executed without awaiting result
-     ///
-    /// ## State Updates
-    ///
-    /// State mutations in `process()` are applied **synchronously** before `send()` returns.
-    /// This ensures UI updates immediately reflect the new state:
-    ///
-    /// ```swift
-    /// supervisor.send(.increment)
-    /// // supervisor.count is already updated here
-    /// ```
-    ///
-    /// ## Async Work
-    ///
-    /// Work returned from `process()` is executed asynchronously. When work completes
-    /// with an action, that action is automatically dispatched via `send()`:
-    ///
-    /// ```swift
-    /// case .fetchUsers:
-    ///     return .run { env in
-    ///         let users = try await env.api.fetchUsers()
-    ///         return .usersLoaded(users)  // This action is sent automatically
-    ///     }
-    /// ```
-    ///
-    /// - Parameter action: The action to dispatch.
     public func send(_ action: Action) {
         // Note: [weak self] is not needed here because this closure is non-escaping.
         // Although Context stores an @escaping closure (mutateFn), the Context itself
@@ -437,7 +280,7 @@ extension Supervisor {
          Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
          Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
          */
-        let work: Work<Action, Dependency, CancellationID> = withUnsafeMutablePointer(
+        let work: Feature.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
             let context = Context<Feature.State>(
@@ -455,42 +298,26 @@ extension Supervisor {
             return self.feature.process(action: action, context: context)
         }
 
-        switch work.operation {
-        case .none:
+        // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
+        if case .cancel = work.operation {
+            Task {
+                await worker.handle(work: work, environment: self.dependency, send: { _ in })
+            }
             return
-        case let .cancellation(id):
-            Task { await self.worker.cancel(taskID: id) }
-        case .task, .fireAndForget, .subscribe:
-            actionContinuation.yield(work)
         }
+
+        actionContinuation.yield(work)
     }
 
-    private func processAsyncWork(_ work: Work<Action, Dependency, CancellationID>) async {
+    private func processAsyncWork(_ work: Feature.FeatureWork) async {
         switch work.operation {
-        case .none:
+        case .done:
             return
-
-        case let .cancellation(id):
-            await self.worker.cancel(taskID: id)
-
-        case .fireAndForget:
-            Task { _ = await worker.run(work, using: dependency) }
-
-        case .task:
-            let resultAction = await self.worker.run(work, using: self.dependency)
-
-            if let resultAction {
-                self.send(resultAction)
+        default:
+            await worker.handle(work: work, environment: dependency) { @MainActor [weak self] action in
+                guard let self else { return }
+                send(action)
             }
-
-        case .subscribe:
-            await self.worker.runSubscription(
-                work,
-                using: self.dependency,
-                onAction: { [weak self] action in
-                    self?.send(action)
-                }
-            )
         }
     }
 }
