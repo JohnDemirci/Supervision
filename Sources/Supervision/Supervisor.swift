@@ -298,6 +298,14 @@ extension Supervisor {
             return self.feature.process(action: action, context: context)
         }
 
+        // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
+        if case .cancel = work.operation {
+            Task {
+                await worker.handle(work: work, environment: self.dependency, send: { _ in })
+            }
+            return
+        }
+
         actionContinuation.yield(work)
     }
 

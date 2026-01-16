@@ -5,11 +5,17 @@
 //  Created by John on 12/2/25.
 //
 
+import Foundation
 import OSLog
 
 actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
+    private struct TrackedTask: Sendable {
+        let token: UUID
+        let task: Task<Void, Never>
+    }
+
     /// Active tasks indexed by their cancellation ID.
-    private var tasks: [AnyHashableSendable: Task<Void, Never>]
+    private var tasks: [AnyHashableSendable: TrackedTask]
     private var lastExecutionTimes: [AnyHashableSendable: ContinuousClock.Instant] = [:]
 
     private let logger = Logger(subsystem: "Supervision", category: "Worker<\(Action.self), \(Environment.self)>")
@@ -30,7 +36,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// If no task exists with the given ID, this method does nothing.
     @inline(__always)
     private func cancel(taskID: AnyHashableSendable) {
-        tasks[taskID]?.cancel()
+        tasks[taskID]?.task.cancel()
         tasks[taskID] = nil
     }
 
@@ -39,8 +45,14 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     /// Called automatically when the worker is deallocated.
     @inline(__always)
     private func cancelAll() {
-        tasks.values.forEach { $0.cancel() }
+        tasks.values.forEach { $0.task.cancel() }
         tasks.removeAll()
+    }
+
+    @inline(__always)
+    private func clearTask(id: AnyHashableSendable, token: UUID) {
+        guard tasks[id]?.token == token else { return }
+        tasks[id] = nil
     }
 
     /*
@@ -81,7 +93,7 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
             if run.configuration.cancelInFlight {
                 cancel(taskID: cancellationID)
             } else if tasks[cancellationID] != nil {
-                return true
+                return false
             }
         }
 
@@ -117,19 +129,29 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
             }
         )
 
+        var trackedToken: UUID?
         if let id = run.configuration.cancellationID {
-            tasks[id] = task
+            let token = UUID()
+            trackedToken = token
+            tasks[id] = TrackedTask(token: token, task: task)
         }
 
         if !run.configuration.fireAndForget {
             await task.value
             let cancellation = !task.isCancelled
 
-            if let id = run.configuration.cancellationID {
-                cancel(taskID: id)
+            if let id = run.configuration.cancellationID, let token = trackedToken {
+                clearTask(id: id, token: token)
             }
 
             return cancellation
+        }
+
+        if let id = run.configuration.cancellationID, let token = trackedToken {
+            Task { [weak self] in
+                _ = await task.result
+                await self?.clearTask(id: id, token: token)
+            }
         }
         return true
     }

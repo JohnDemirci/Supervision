@@ -30,7 +30,7 @@ public struct AnyHashableSendable: Hashable, Sendable {
 
 extension AnyHashableSendable {
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        return AnyHashable(lhs) == AnyHashable(rhs)
+        return AnyHashable(lhs.value) == AnyHashable(rhs.value)
     }
 
     public func hash(into hasher: inout Hasher) {

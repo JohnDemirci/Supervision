@@ -487,6 +487,7 @@ private extension Work.Run {
                 name: run.configuration.name,
                 cancellationID: run.configuration.cancellationID,
                 cancelInFlight: run.configuration.cancelInFlight,
+                fireAndForget: run.configuration.fireAndForget,
                 debounce: run.configuration.debounce,
                 throttle: run.configuration.throttle,
                 priority: run.configuration.priority
