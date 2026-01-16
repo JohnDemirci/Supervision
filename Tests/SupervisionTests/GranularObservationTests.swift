@@ -70,8 +70,8 @@ struct ObservationTestFeature: FeatureProtocol {
 
         case .batchUpdate(let count, let name):
             context.modify { batch in
-                batch.count.wrappedValue = count
-                batch.name.wrappedValue = name
+                batch.set(\.count, to: count)
+                batch.set(\.name, to: name)
             }
 
         case .multiPropertyUpdate(let count, let name, let isEnabled):
@@ -98,9 +98,9 @@ struct GranularObservationTests {
             dependency: ()
         )
 
-        #expect(supervisor.count == 42)
-        #expect(supervisor.name == "Test")
-        #expect(supervisor.isEnabled == false)
+        #expect(supervisor[\.count] == 42)
+        #expect(supervisor[\.name] == "Test")
+        #expect(supervisor[\.isEnabled] == false)
     }
 
     @Test("State mutations are reflected in reads")
@@ -111,10 +111,10 @@ struct GranularObservationTests {
         )
 
         supervisor.send(.setCount(100))
-        #expect(supervisor.count == 100)
+        #expect(supervisor[\.count] == 100)
 
         supervisor.send(.setName("Updated"))
-        #expect(supervisor.name == "Updated")
+        #expect(supervisor[\.name] == "Updated")
     }
 
     // MARK: - Equatable Optimization
@@ -171,10 +171,10 @@ struct GranularObservationTests {
         )
 
         supervisor.send(.setUserFirstName("John"))
-        #expect(supervisor.user.firstName == "John")
+        #expect(supervisor[\.user.firstName] == "John")
 
         supervisor.send(.setUserAge(30))
-        #expect(supervisor.user.age == 30)
+        #expect(supervisor[\.user.age] == 30)
     }
 
     @Test("Nested keyPath with same value does not trigger")
@@ -209,8 +209,8 @@ struct GranularObservationTests {
 
         supervisor.send(.batchUpdate(count: 50, name: "Batch"))
 
-        #expect(supervisor.count == 50)
-        #expect(supervisor.name == "Batch")
+        #expect(supervisor[\.count] == 50)
+        #expect(supervisor[\.name] == "Batch")
     }
 
     @Test("Multiple mutations in single send apply atomically")
@@ -222,9 +222,9 @@ struct GranularObservationTests {
 
         supervisor.send(.multiPropertyUpdate(count: 10, name: "Multi", isEnabled: true))
 
-        #expect(supervisor.count == 10)
-        #expect(supervisor.name == "Multi")
-        #expect(supervisor.isEnabled == true)
+        #expect(supervisor[\.count] == 10)
+        #expect(supervisor[\.name] == "Multi")
+        #expect(supervisor[\.isEnabled] == true)
     }
 
     // MARK: - Array Mutations
@@ -332,7 +332,7 @@ struct GranularObservationTests {
         supervisor.send(.incrementCount)
         supervisor.send(.incrementCount)
 
-        #expect(supervisor.count == 3)
+        #expect(supervisor[\.count] == 3)
     }
 
     // MARK: - Stress Tests
@@ -348,7 +348,7 @@ struct GranularObservationTests {
             supervisor.send(.setCount(i))
         }
 
-        #expect(supervisor.count == 999)
+        #expect(supervisor[\.count] == 999)
     }
 
     @Test("Alternating property mutations work correctly")
@@ -364,9 +364,9 @@ struct GranularObservationTests {
             supervisor.send(.setIsEnabled(i % 2 == 0))
         }
 
-        #expect(supervisor.count == 99)
-        #expect(supervisor.name == "Name99")
-        #expect(supervisor.isEnabled == false)
+        #expect(supervisor[\.count] == 99)
+        #expect(supervisor[\.name] == "Name99")
+        #expect(supervisor[\.isEnabled] == false)
     }
 
     // MARK: - Edge Cases

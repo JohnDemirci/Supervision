@@ -104,9 +104,7 @@ struct BoardTests {
             }
         
         #expect(userSupervisor === anotherSupervisor)
-        
-        try await Task.sleep(for: .seconds(3))
-        
+
         #expect(board.numberOfSupervisors == 1)
     }
     

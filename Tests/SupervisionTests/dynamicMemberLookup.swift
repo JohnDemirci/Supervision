@@ -44,6 +44,7 @@ private struct CounterFeature: FeatureProtocol {
 @Suite("Supervisor Dynamic Member Lookup")
 struct SupervisorDynamicMemberLookupTests {
     @Test("Access state properties via dynamic member lookup")
+
     func accessProperties() async throws {
         let supervisor = Supervisor<CounterFeature>(
             state: CounterFeature.State(),
@@ -51,9 +52,9 @@ struct SupervisorDynamicMemberLookupTests {
         )
 
         // Access properties directly via dynamic member lookup
-        #expect(supervisor.count == 0)
-        #expect(supervisor.name == "Counter")
-        #expect(supervisor.isEnabled == true)
+        #expect(supervisor[\.count] == 0)
+        #expect(supervisor[\.name] == "Counter")
+        #expect(supervisor[\.isEnabled] == true)
     }
 
     @Test("Dynamic member lookup reflects state changes")
@@ -63,16 +64,16 @@ struct SupervisorDynamicMemberLookupTests {
             dependency: ()
         )
 
-        #expect(supervisor.count == 0)
+        #expect(supervisor[\.count] == 0)
 
         supervisor.send(.increment)
-        #expect(supervisor.count == 1)
+        #expect(supervisor[\.count] == 1)
 
         supervisor.send(.increment)
-        #expect(supervisor.count == 2)
+        #expect(supervisor[\.count] == 2)
 
         supervisor.send(.decrement)
-        #expect(supervisor.count == 1)
+        #expect(supervisor[\.count] == 1)
     }
 
     @Test("Dynamic member lookup works with string properties")
@@ -82,10 +83,10 @@ struct SupervisorDynamicMemberLookupTests {
             dependency: ()
         )
 
-        #expect(supervisor.name == "Counter")
+        #expect(supervisor[\.name] == "Counter")
 
         supervisor.send(.setName("Updated"))
-        #expect(supervisor.name == "Updated")
+        #expect(supervisor[\.name] == "Updated")
     }
 
     @Test("Dynamic member lookup returns correct values")
@@ -96,8 +97,8 @@ struct SupervisorDynamicMemberLookupTests {
         )
 
         // Dynamic member lookup should return the correct state values
-        #expect(supervisor.count == 42)
-        #expect(supervisor.name == "Test")
-        #expect(supervisor.isEnabled == false)
+        #expect(supervisor[\.count] == 42)
+        #expect(supervisor[\.name] == "Test")
+        #expect(supervisor[\.isEnabled] == false)
     }
 }

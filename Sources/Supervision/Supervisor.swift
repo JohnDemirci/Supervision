@@ -10,7 +10,6 @@ import Observation
 import OSLog
 
 @MainActor
-@dynamicMemberLookup
 public final class Supervisor<Feature: FeatureProtocol>: Observable {
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
@@ -136,32 +135,6 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     }
 
     /*
-     this is the public public which consumers of this architecture use to access the state amd enable observation.
-
-     trackAccess(for: keyPath) function references a class annotated with the @Observable macro
-
-     when a swiftui view is accessing the keypath, the observvation machinery in swiftui and the observation framework sees that there's an interaction with an @Observable class, in this case, it is the ObservationToken.
-
-     _ = token(for: keyPath).version
-
-     when swiftui's body re-evaluate, it checks if the version number corresponding to the keypath changes.
-
-     in a way the current implementation is similar to doing something like this
-
-     withObservationTracking {
-         _ = token(for: keyPath).version
-     } onChange: {
-         ...
-     }
-
-     because that particular keypath is associated with the observation token, the mutation notifications for the keypath will cause the re-render
-     */
-    public subscript<Subject>(dynamicMember keyPath: KeyPath<State, Subject>) -> Subject {
-        trackAccess(for: keyPath)
-        return _state[keyPath: keyPath]
-    }
-
-    /*
      it looks like the observation does not work correctly with dynamic member lookup when we are observing nested keypaths.
      
      from what i gathered it looks like the compiler cannot determine that at sn optimized level and therefore ignore it it only viewed as the parent keypath not the nested ones so when a child keypath gets updated the parent is not being updated
@@ -172,11 +145,14 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
      \.state.person.name
      */
+
+    @inline(__always)
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
         trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
     }
 
+    @inline(__always)
     public func read<T>(_ keypath: KeyPath<State, T>) -> T {
         trackAccess(for: keypath)
         return _state[keyPath: keypath]

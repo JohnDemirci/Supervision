@@ -134,8 +134,6 @@ public protocol FeatureProtocol {
     init()
 }
 
-extension Never: Hashable & Sendable { }
-
 extension FeatureProtocol {
     public var observationMap: ObservationMap {
         [:]

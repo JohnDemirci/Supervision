@@ -5,7 +5,6 @@
 //  Created by John on 11/29/25.
 //
 
-@dynamicMemberLookup
 public struct BatchBuilder<State>: ~Copyable {
     private let mutateFn: (AnyMutation<State>) -> Void
     private let statePointer: UnsafePointer<State>
@@ -16,14 +15,6 @@ public struct BatchBuilder<State>: ~Copyable {
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
-    }
-
-    public subscript<Value>(dynamicMember keyPath: WritableKeyPath<State, Value>) -> WritableProjection<State, Value> {
-        WritableProjection(
-            keyPath: keyPath,
-            mutateFn: mutateFn,
-            statePointer: statePointer
-        )
     }
 
     // MARK: - Explicit Set Methods for Equatable Optimization

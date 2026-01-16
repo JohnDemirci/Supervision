@@ -26,24 +26,20 @@ public struct Context<State>: ~Copyable {
 
     @inlinable
     public subscript<Value>(dynamicMember keyPath: KeyPath<State, Value>) -> Value {
-        statePointer.pointee[keyPath: keyPath]
-    }
-
-    @inlinable
-    public func read<Value>(_ keyPath: KeyPath<State, Value>) -> Value {
-        statePointer.pointee[keyPath: keyPath]
+        state[keyPath: keyPath]
     }
 
     @inlinable
     public var state: State {
-        get {
-            statePointer.pointee
+        @inlinable
+        _read {
+            yield statePointer.pointee
         }
     }
 
     @inlinable
     public func modify<Value: Equatable>(_ keyPath: WritableKeyPath<State, Value>, to newValue: Value) {
-        let oldValue = statePointer.pointee[keyPath: keyPath]
+        let oldValue = state[keyPath: keyPath]
         guard oldValue != newValue else { return }
         mutateFn(.init(keyPath, newValue))
     }
@@ -59,7 +55,7 @@ public struct Context<State>: ~Copyable {
         _ keyPath: WritableKeyPath<State, Value>,
         _ mutation: (inout Value) -> Void
     ) {
-        let oldValue = statePointer.pointee[keyPath: keyPath]
+        let oldValue = state[keyPath: keyPath]
         var newValue = oldValue
         mutation(&newValue)
         guard oldValue != newValue else { return }
@@ -69,14 +65,13 @@ public struct Context<State>: ~Copyable {
     @inlinable
     @_disfavoredOverload
     public func modify<Value>(_ keyPath: WritableKeyPath<State, Value>, _ mutation: (inout Value) -> Void) {
-        var value = statePointer.pointee[keyPath: keyPath]
+        var value = state[keyPath: keyPath]
         mutation(&value)
         mutateFn(.init(keyPath, value))
     }
 
     // MARK: - Batching
 
-    @inline(never)
     public func modify(_ build: (borrowing BatchBuilder<State>) -> Void) {
         let mutateFn = self.mutateFn
         build(

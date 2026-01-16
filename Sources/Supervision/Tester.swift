@@ -44,5 +44,7 @@ public final class Tester<Feature: FeatureProtocol> {
 
             return self.feature.process(action: action, context: context)
         }
+
+        print(work)
     }
 }
