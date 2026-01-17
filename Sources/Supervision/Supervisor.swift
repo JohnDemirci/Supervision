@@ -288,9 +288,7 @@ extension Supervisor {
                     mutation.apply(&pointer.pointee)
                     self.notifyChange(for: mutation.keyPath)
 
-                    #if DEBUG
                     self.logger.debug("\(mutation.keyPath.debugDescription) has changed")
-                    #endif
                 },
                 statePointer: UnsafePointer(pointer)
             )

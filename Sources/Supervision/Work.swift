@@ -6,6 +6,10 @@
 //
 
 import Foundation
+import IssueReporting
+
+// artifical limit to how many works users can add for merge and concatenate
+private let _maxGroupedWorks: Int = 5
 
 public struct Work<Output, Environment>: Sendable, Hashable {
     public enum Operation: Sendable, Hashable {
@@ -258,6 +262,8 @@ extension Work {
     ///
     /// - Note: Works that fail or throw error do not effect the other works.
     ///
+    /// - Important: Maximum number of works a person can put in is 5.
+    ///
     /// - Parameters:
     ///    - works: An array of ``Work<Output, Environment>``
     ///
@@ -268,8 +274,19 @@ extension Work {
             return true
         }
 
-        if nonEmptyWorks.isEmpty { return .done }
-        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+        guard nonEmptyWorks.count <= _maxGroupedWorks else {
+            reportIssue("exceeded the limit for the number of works")
+            return .done
+        }
+
+        if nonEmptyWorks.isEmpty {
+            reportIssue("provided an empty list of non-empty works.")
+            return .done
+        }
+
+        if nonEmptyWorks.count == 1 {
+            return nonEmptyWorks.first!
+        }
 
         return Work(operation: .merge(nonEmptyWorks))
     }
@@ -300,8 +317,19 @@ extension Work {
             return true
         }
 
-        if nonEmptyWorks.isEmpty { return .done }
-        if nonEmptyWorks.count == 1 { return nonEmptyWorks.first! }
+        guard nonEmptyWorks.count <= _maxGroupedWorks else {
+            reportIssue("exceeded the limit for the number of works")
+            return .done
+        }
+
+        if nonEmptyWorks.isEmpty {
+            reportIssue("provided an empty list of non-empty works.")
+            return .done
+        }
+
+        if nonEmptyWorks.count == 1 {
+            return nonEmptyWorks.first!
+        }
 
         return Work(operation: .concatenate(nonEmptyWorks))
     }
