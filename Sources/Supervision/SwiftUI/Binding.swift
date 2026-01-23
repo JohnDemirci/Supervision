@@ -9,7 +9,7 @@ import SwiftUI
 
 // MARK: - SwiftUI Binding Support
 
-extension Supervisor {
+extension Feature {
     /// Creates a SwiftUI Binding that sends an action when the value changes
     ///
     /// This maintains unidirectional data flow by routing all changes through the action system.

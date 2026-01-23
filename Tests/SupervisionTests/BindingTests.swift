@@ -99,7 +99,7 @@ struct BindingTests {
 
     @Test("action binding sends action on value change")
     func testActionBindingSendsAction() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         // Create binding
         let usernameBinding = supervisor.binding(\.username, send: { .usernameChanged($0) })
@@ -117,7 +117,7 @@ struct BindingTests {
 
     @Test("action binding validates input")
     func testActionBindingValidation() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         let usernameBinding = supervisor.binding(\.username, send: { .usernameChanged($0) })
 
@@ -136,7 +136,7 @@ struct BindingTests {
 
     @Test("action binding transforms email to lowercase")
     func testActionBindingTransformsEmail() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         let emailBinding = supervisor.binding(\.email, send: { .emailChanged($0) })
 
@@ -150,7 +150,7 @@ struct BindingTests {
 
     @Test("action binding clamps age value")
     func testActionBindingClampsAge() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         let ageBinding = supervisor.binding(\.age, send: { .ageChanged($0) })
 
@@ -169,7 +169,7 @@ struct BindingTests {
 
     @Test("action binding works with toggle")
     func testActionBindingToggle() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         let subscriptionBinding = supervisor.binding(\.isSubscribed, send: { .subscriptionToggled($0) })
 
@@ -188,7 +188,7 @@ struct BindingTests {
 
     @Test("direct binding mutates state without actions")
     func testDirectBindingNoActions() async throws {
-        let supervisor = Supervisor<UIStateFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<UIStateFeature>(state: .init(), dependency: ())
 
         let volumeBinding = supervisor.directBinding(\.volume)
 
@@ -203,7 +203,7 @@ struct BindingTests {
 
     @Test("direct binding updates state immediately")
     func testDirectBindingImmediate() async throws {
-        let supervisor = Supervisor<UIStateFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<UIStateFeature>(state: .init(), dependency: ())
 
         let brightnessBinding = supervisor.directBinding(\.brightness)
 
@@ -220,7 +220,7 @@ struct BindingTests {
 
     @Test("direct binding works with integer selection")
     func testDirectBindingIntegerSelection() async throws {
-        let supervisor = Supervisor<UIStateFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<UIStateFeature>(state: .init(), dependency: ())
 
         let tabBinding = supervisor.directBinding(\.selectedTab)
 
@@ -261,7 +261,7 @@ struct BindingTests {
             }
         }
 
-        let supervisor = Supervisor<MixedFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<MixedFeature>(state: .init(), dependency: ())
 
         // Action binding: transforms value
         let nameBinding = supervisor.binding(\.name, send: { .nameChanged($0) })
@@ -276,7 +276,7 @@ struct BindingTests {
 
     @Test("bindings read current state correctly")
     func testBindingsReadCurrentState() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(
+        let supervisor = Feature<FormFeature>(state: .init(
             username: "initial",
             email: "test@example.com",
             age: 25,
@@ -300,7 +300,7 @@ struct BindingTests {
 
     @Test("action binding with custom animation parameter")
     func testActionBindingWithAnimation() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         // Binding with spring animation
         let binding = supervisor.binding(
@@ -317,7 +317,7 @@ struct BindingTests {
 
     @Test("direct binding with custom animation parameter")
     func testDirectBindingWithAnimation() async throws {
-        let supervisor = Supervisor<UIStateFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<UIStateFeature>(state: .init(), dependency: ())
 
         // Binding with easeInOut animation
         let binding = supervisor.directBinding(\.volume, animation: .easeInOut)
@@ -330,7 +330,7 @@ struct BindingTests {
 
     @Test("action binding without animation parameter")
     func testActionBindingNoAnimation() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         // Binding without animation (immediate update)
         let binding = supervisor.binding(\.age, send: { .ageChanged($0) })
@@ -342,7 +342,7 @@ struct BindingTests {
 
     @Test("direct binding without animation parameter")
     func testDirectBindingNoAnimation() async throws {
-        let supervisor = Supervisor<UIStateFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<UIStateFeature>(state: .init(), dependency: ())
 
         // Binding without animation (immediate update)
         let binding = supervisor.directBinding(\.selectedTab)
@@ -376,7 +376,7 @@ struct BindingTests {
             }
         }
 
-        let supervisor = Supervisor<VolumeFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<VolumeFeature>(state: .init(), dependency: ())
 
         // Direct binding for smooth dragging
         let volumeBinding = supervisor.directBinding(\.volume, animation: .spring)
@@ -397,7 +397,7 @@ struct BindingTests {
 
     @Test("multiple bindings to same supervisor")
     func testMultipleBindingsToSameSupervisor() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         let usernameBinding = supervisor.binding(\.username, send: { .usernameChanged($0) })
         let emailBinding = supervisor.binding(\.email, send: { .emailChanged($0) })
@@ -415,7 +415,7 @@ struct BindingTests {
 
     @Test("binding animation parameter is optional")
     func testBindingAnimationParameterOptional() async throws {
-        let supervisor = Supervisor<FormFeature>(state: .init(), dependency: ())
+        let supervisor = Feature<FormFeature>(state: .init(), dependency: ())
 
         // Can omit animation parameter (defaults to nil)
         let binding1 = supervisor.binding(\.username, send: { .usernameChanged($0) })

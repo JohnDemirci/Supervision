@@ -46,7 +46,7 @@ struct SupervisorDynamicMemberLookupTests {
     @Test("Access state properties via dynamic member lookup")
 
     func accessProperties() async throws {
-        let supervisor = Supervisor<CounterFeature>(
+        let supervisor = Feature<CounterFeature>(
             state: CounterFeature.State(),
             dependency: ()
         )
@@ -59,7 +59,7 @@ struct SupervisorDynamicMemberLookupTests {
 
     @Test("Dynamic member lookup reflects state changes")
     func propertiesUpdateAfterAction() async throws {
-        let supervisor = Supervisor<CounterFeature>(
+        let supervisor = Feature<CounterFeature>(
             state: CounterFeature.State(),
             dependency: ()
         )
@@ -78,7 +78,7 @@ struct SupervisorDynamicMemberLookupTests {
 
     @Test("Dynamic member lookup works with string properties")
     func stringPropertyAccess() async throws {
-        let supervisor = Supervisor<CounterFeature>(
+        let supervisor = Feature<CounterFeature>(
             state: CounterFeature.State(),
             dependency: ()
         )
@@ -91,7 +91,7 @@ struct SupervisorDynamicMemberLookupTests {
 
     @Test("Dynamic member lookup returns correct values")
     func equivalentToStateAccess() async throws {
-        let supervisor = Supervisor<CounterFeature>(
+        let supervisor = Feature<CounterFeature>(
             state: CounterFeature.State(count: 42, name: "Test", isEnabled: false),
             dependency: ()
         )

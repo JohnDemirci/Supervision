@@ -244,7 +244,7 @@ struct EquatableChangeDetectionTests {
 
     @Test("Supervisor does not trigger observation when setting same value")
     func supervisorSameValueNoObservation() async throws {
-        let supervisor = Supervisor<TestFeature>(
+        let supervisor = Feature<TestFeature>(
             state: TestState(count: 42, name: "Test"),
             dependency: ()
         )
@@ -259,7 +259,7 @@ struct EquatableChangeDetectionTests {
 
     @Test("Supervisor triggers observation when setting different value")
     func supervisorDifferentValueTriggersObservation() async throws {
-        let supervisor = Supervisor<TestFeature>(
+        let supervisor = Feature<TestFeature>(
             state: TestState(count: 42),
             dependency: ()
         )
@@ -271,7 +271,7 @@ struct EquatableChangeDetectionTests {
 
     @Test("Batch mutations trigger for each mutation")
     func batchMutationsTrigger() async throws {
-        let supervisor = Supervisor<TestFeature>(
+        let supervisor = Feature<TestFeature>(
             state: TestState(count: 10, name: "Original"),
             dependency: ()
         )
@@ -285,7 +285,7 @@ struct EquatableChangeDetectionTests {
 
     @Test("Multiple same-value mutations do not accumulate observations")
     func multipleSameValueMutationsNoAccumulation() async throws {
-        let supervisor = Supervisor<TestFeature>(
+        let supervisor = Feature<TestFeature>(
             state: TestState(count: 0),
             dependency: ()
         )

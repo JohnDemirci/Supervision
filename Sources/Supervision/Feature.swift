@@ -1,5 +1,5 @@
 //
-//  Supervisor.swift
+//  FeatureContainer.swift
 //  Supervision
 //
 //  Created by John on 11/28/25.
@@ -10,19 +10,19 @@ import Observation
 import OSLog
 
 @MainActor
-public final class Supervisor<Feature: FeatureProtocol>: Observable {
-    public typealias Action = Feature.Action
-    public typealias Dependency = Feature.Dependency
-    public typealias State = Feature.State
+public final class Feature<F: FeatureProtocol>: Observable {
+    public typealias Action = F.Action
+    public typealias Dependency = F.Dependency
+    public typealias State = F.State
 
     public let id: ReferenceIdentifier
 
-    let feature: Feature
+    let feature: F
 
     private nonisolated let logger: Logger
 
-    private let actionContinuation: AsyncStream<Feature.FeatureWork>.Continuation
-    private let actionStream: AsyncStream<Feature.FeatureWork>
+    private let actionContinuation: AsyncStream<F.FeatureWork>.Continuation
+    private let actionStream: AsyncStream<F.FeatureWork>
     private let dependency: Dependency
 
     /*
@@ -32,7 +32,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
      when those provided keypaths mutate, we fire off notification for the computed properties observation token
      */
-    private let observationMap: Feature.ObservationMap
+    private let observationMap: F.ObservationMap
 
     /*
      A Seperate entity is responsible for handling async operations
@@ -84,20 +84,20 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
     ) {
         self.dependency = dependency
         self.worker = Worker()
-        self.feature = Feature()
+        self.feature = F()
         self.id = id
-        self.logger = .init(subsystem: "com.Supervision.\(Feature.self)", category: "Supervisor")
+        self.logger = .init(subsystem: "com.Supervision.\(F.self)", category: "Supervisor")
         self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: Feature.FeatureWork.self,
+            of: F.FeatureWork.self,
             bufferingPolicy: .unbounded
         )
 
         // reverse the observationMap provided by the feature
         // this makes it easier to notify the changes
         self.observationMap = feature.observationMap.reduce(
-            into: Feature.ObservationMap()
+            into: F.ObservationMap()
         ) { partialResult, kvp in
             kvp.value.forEach { valueKeypath in
                 partialResult[valueKeypath, default: []].append(kvp.key)
@@ -161,7 +161,7 @@ public final class Supervisor<Feature: FeatureProtocol>: Observable {
 
 // MARK: - Convenience Initializers
 
-public extension Supervisor where State: Identifiable {
+public extension Feature where State: Identifiable {
     /// Creates a supervisor with an identifiable state.
     ///
     /// The supervisor's ``id`` is derived from `state.id`, enabling ``Board``
@@ -198,7 +198,7 @@ public extension Supervisor where State: Identifiable {
     }
 }
 
-public extension Supervisor {
+public extension Feature {
     /// Creates a supervisor with non-identifiable state.
     ///
     /// The supervisor's ``id`` is based on the feature type, meaning all supervisors
@@ -232,7 +232,7 @@ public extension Supervisor {
         dependency: Dependency
     ) {
         self.init(
-            id: ReferenceIdentifier(id: ObjectIdentifier(Supervisor<Feature>.self) as AnyHashable),
+            id: ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self) as AnyHashable),
             state: state,
             dependency: dependency
         )
@@ -241,7 +241,7 @@ public extension Supervisor {
 
 // MARK: - Observation
 
-extension Supervisor {
+extension Feature {
     @inline(__always)
     private func token(for keyPath: PartialKeyPath<State>) -> ObservationToken {
         if let existing = _observationTokens[keyPath] {
@@ -269,7 +269,7 @@ extension Supervisor {
     }
 }
 
-extension Supervisor {
+extension Feature {
     public func send(_ action: Action) {
         // Note: [weak self] is not needed here because this closure is non-escaping.
         // Although Context stores an @escaping closure (mutateFn), the Context itself
@@ -280,10 +280,10 @@ extension Supervisor {
          Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
          Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
          */
-        let work: Feature.FeatureWork = withUnsafeMutablePointer(
+        let work: F.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
-            let context = Context<Feature.State>(
+            let context = Context<F.State>(
                 mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
                     self.notifyChange(for: mutation.keyPath)
@@ -307,7 +307,7 @@ extension Supervisor {
         actionContinuation.yield(work)
     }
 
-    private func processAsyncWork(_ work: Feature.FeatureWork) async {
+    private func processAsyncWork(_ work: F.FeatureWork) async {
         switch work.operation {
         case .done:
             return
@@ -322,7 +322,7 @@ extension Supervisor {
 
 // MARK: - Supervisor + Direct Binding
 
-extension Supervisor {
+extension Feature {
     /// Applies a mutation directly to the state for a specific keyPath.
     /// Used internally by `directBinding` for direct state mutations.
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
@@ -350,8 +350,8 @@ final class ObservationToken: @unchecked Sendable {
     }
 }
 
-extension Supervisor where State: Identifiable {
+extension Feature where State: Identifiable {
     static func makeID(from id: State.ID) -> ReferenceIdentifier {
-        ReferenceIdentifier(id, ObjectIdentifier(Feature.self))
+        ReferenceIdentifier(id, ObjectIdentifier(F.self))
     }
 }

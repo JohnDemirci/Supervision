@@ -93,7 +93,7 @@ struct GranularObservationTests {
 
     @Test("Dynamic member lookup reads state correctly")
     func dynamicMemberLookupReadsState() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(count: 42, name: "Test"),
             dependency: ()
         )
@@ -105,7 +105,7 @@ struct GranularObservationTests {
 
     @Test("State mutations are reflected in reads")
     func stateMutationsReflectedInReads() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -165,7 +165,7 @@ struct GranularObservationTests {
 
     @Test("Nested keyPath mutation works correctly")
     func nestedKeyPathMutation() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -202,7 +202,7 @@ struct GranularObservationTests {
 
     @Test("Batch mutations apply all changes")
     func batchMutationsApplyAll() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -215,7 +215,7 @@ struct GranularObservationTests {
 
     @Test("Multiple mutations in single send apply atomically")
     func multipleMutationsAtomic() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -323,7 +323,7 @@ struct GranularObservationTests {
 
     @Test("Supervisor applies mutations correctly")
     func supervisorAppliesMutations() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -339,7 +339,7 @@ struct GranularObservationTests {
 
     @Test("Many rapid mutations do not cause issues")
     func manyRapidMutations() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
@@ -353,7 +353,7 @@ struct GranularObservationTests {
 
     @Test("Alternating property mutations work correctly")
     func alternatingPropertyMutations() {
-        let supervisor = Supervisor<ObservationTestFeature>(
+        let supervisor = Feature<ObservationTestFeature>(
             state: .init(),
             dependency: ()
         )
