@@ -208,7 +208,11 @@ extension Work {
                         feed: { input in
                             switch input {
                             case let .streamValues(values):
-                                return values.compactMap { $0 as? Value }.map { map(.success($0)) }
+                                return values.compactMap {
+                                    $0 as? Value
+                                }.map {
+                                    map(.success($0))
+                                }
                             case let .streamFailure(error):
                                 return [map(.failure(error))]
                             case .streamFinished, .taskResult:

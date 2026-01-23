@@ -29,7 +29,7 @@ public final class Tester<Feature: FeatureProtocol> {
     let feature: Feature
     private var _state: State
 
-    private var inspectionList: [WorkInspection<Feature>] = []
+    private var inspectionList: Set<WorkInspection<Feature>> = []
 
     deinit {
         if !inspectionList.isEmpty {
@@ -81,16 +81,16 @@ public final class Tester<Feature: FeatureProtocol> {
     }
 
     func registerInspection(_ inspection: WorkInspection<Feature>) {
-        inspectionList.append(inspection)
+        inspectionList.insert(inspection)
     }
 
     func removeInspection(_ inspection: WorkInspection<Feature>) {
-        guard let originalInspectionIndex = inspectionList.firstIndex(where: { $0.id == inspection.id }) else {
+        guard let originalInspection = inspectionList.firstIndex(of: inspection) else {
             reportIssue("attempted to get inspection when there is no entry in teh inspectionlist")
             return
         }
 
-        guard inspection.id == inspectionList[originalInspectionIndex].id else {
+        guard inspection.id == inspectionList[originalInspection].id else {
             reportIssue("attempted to remove an inspection with a different id")
             return
         }
@@ -100,27 +100,33 @@ public final class Tester<Feature: FeatureProtocol> {
             return
         }
 
-        inspectionList.remove(at: originalInspectionIndex)
+        guard inspection.subscriptions.isEmpty else {
+            reportIssue("there are still subscriptions running, please indicate that the stream is finished")
+            return
+        }
+
+        inspectionList.remove(inspection)
     }
 
     func removeInspection(_ inspectionID: AnyHashableSendable) {
-        var indexList: [Int] = []
-        for (index, value) in inspectionList.enumerated() {
-            if value.id == inspectionID {
-                indexList.append(index)
-            }
+        let inspection = inspectionList.first {
+            $0.id == inspectionID
         }
 
-        indexList.forEach {
-            inspectionList[$0].completion = .finished
-            inspectionList.remove(at: $0)
+        guard let inspection else {
+            reportIssue("attempted to remove an inspection that does not exist")
+            return
         }
+
+        inspection.completion = .finished
+        inspection.operationAssertionDone = true
+        inspectionList.remove(inspection)
     }
 }
 
 // MARK: - WorkInspection
 
-public final class WorkInspection<Feature: FeatureProtocol>: Identifiable {
+public final class WorkInspection<Feature: FeatureProtocol>: Identifiable, Hashable {
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
 
@@ -133,10 +139,25 @@ public final class WorkInspection<Feature: FeatureProtocol>: Identifiable {
 
     fileprivate var children: [WorkInspection] = []
     fileprivate var completion: Completion = .pending
+    fileprivate var subscriptions: [WorkInspection] = []
     fileprivate let work: Work<Action, Dependency>
+    fileprivate var operationAssertionDone = false
 
     fileprivate weak var parent: WorkInspection?
     fileprivate weak var tester: Tester<Feature>?
+
+    var isSubscriptionWork: Bool {
+        guard case .run(let run) = work.operation else {
+            return false
+        }
+
+        guard
+            run.configuration.fireAndForget,
+            run.testPlan?.isContinuous == true
+        else { return false }
+
+        return true
+    }
 
     init(
         work: Work<Action, Dependency>,
@@ -166,6 +187,18 @@ public final class WorkInspection<Feature: FeatureProtocol>: Identifiable {
         if !children.isEmpty {
             reportIssue("de initializing inspection that still has children")
         }
+
+        if !operationAssertionDone {
+            reportIssue("initial operation assertion has not been called please call the assert functions provided by WorkInspection class")
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    public static func == (lhs: WorkInspection, rhs: WorkInspection) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
@@ -184,6 +217,7 @@ extension WorkInspection {
         }
 
         self.completion = .finished
+        self.operationAssertionDone = true
         tester?.removeInspection(self)
         return
     }
@@ -200,6 +234,7 @@ extension WorkInspection {
         }
 
         self.completion = .finished
+        self.operationAssertionDone = true
         tester?.removeInspection(cancelID)
         tester?.removeInspection(self)
     }
@@ -213,6 +248,7 @@ extension WorkInspection {
             return self
         }
 
+        self.operationAssertionDone = true
         configuration(run.configuration)
         return self
     }
@@ -234,6 +270,11 @@ extension WorkInspection {
         var swappedWorks = works
         
         for swap in swaps {
+            guard swap.0 >= 0 && swap.1 >= 0 else {
+                reportIssue("swap indices must be non-negative")
+                return self
+            }
+
             guard swap.0 < numberOfWorks && swap.1 < numberOfWorks else {
                 reportIssue("swap indices are higher than the maximum number of works")
                 return self
@@ -245,7 +286,8 @@ extension WorkInspection {
         self.children = swappedWorks.map {
             WorkInspection(work: $0, tester: tester!, parent: self)
         }
-        
+
+        self.operationAssertionDone = true
         return self
     }
 
@@ -265,6 +307,7 @@ extension WorkInspection {
             WorkInspection(work: $0, tester: tester!, parent: self)
         }
 
+        self.operationAssertionDone = true
         return self
     }
 
@@ -274,7 +317,12 @@ extension WorkInspection {
             child.forget()
         }
 
+        for subscription in self.subscriptions {
+            subscription.forget()
+        }
+
         self.children.removeAll()
+        self.subscriptions.removeAll()
         tester?.removeInspection(self.id)
     }
 }
@@ -282,22 +330,10 @@ extension WorkInspection {
 // MARK: - feed
 
 extension WorkInspection {
-    func feedResult<Value>(
-        _ result: Result<Value, Error>
+    private func handleFeedForTask<Value>(
+        _ result: Result<Value, Error>,
+        _ plan: Work<Action, Dependency>.TestPlan
     ) throws -> Action {
-        guard case .run(let run) = work.operation else {
-            throw Tester<Feature>.Failure.message("expected the operation to be .run but received \(work.operation)")
-        }
-
-        guard let plan = run.testPlan else {
-            tester?.removeInspection(self.id)
-            throw Tester<Feature>.Failure.message("there is no test plan for this")
-        }
-
-        guard plan.kind == .task else {
-            throw Tester<Feature>.Failure.message("expected a task type")
-        }
-
         guard plan.expectedInputType == Result<Value, Error>.self else {
             throw Tester<Feature>.Failure.message("mismatching expectation for \(Value.self)")
         }
@@ -323,6 +359,66 @@ extension WorkInspection {
         return output
     }
 
+    private func handleFeedForStream<Value>(
+        _ result: Result<Value, Error>,
+        _ plan: Work<Action, Dependency>.TestPlan
+    ) throws -> Action {
+        guard plan.expectedInputType == Value.self else {
+            throw Failure.message("Unexpected value type is sent")
+        }
+
+        let actions = switch result {
+        case .success(let value):
+            plan.feed(.streamValues([value]))
+        case .failure(let error):
+            plan.feed(.streamFailure(error))
+        }
+
+        return actions.first!
+    }
+
+    public func finishStream() {
+        self.completion = .finished
+        parent?.childFinishStream(self)
+        tester?.removeInspection(self)
+    }
+
+    func feedResult<Value>(
+        _ result: Result<Value, Error>
+    ) throws -> Action {
+        guard case .run(let run) = work.operation else {
+            throw Failure.message("expected the operation to be .run but received \(work.operation)")
+        }
+
+        guard let plan = run.testPlan else {
+            tester?.removeInspection(self.id)
+            throw Tester<Feature>.Failure.message("there is no test plan for this")
+        }
+
+        return switch plan.kind {
+        case .task:
+            try handleFeedForTask(result, plan)
+        case .stream:
+            try handleFeedForStream(result, plan)
+        }
+    }
+
+    func childFinishStream(_ child: WorkInspection) {
+        guard let childIndex = self.subscriptions.firstIndex(of: child) else {
+            reportIssue("unexpected child completed out of order")
+            return
+        }
+
+        subscriptions[childIndex].completion = .finished
+        subscriptions.remove(at: childIndex)
+
+        if self.children.isEmpty && self.subscriptions.isEmpty {
+            self.completion = .finished
+            self.parent?.childDone(self)
+            tester?.removeInspection(self)
+        }
+    }
+
     func childDone(_ child: WorkInspection<Feature>) {
         guard child.id == self.children.first?.id else {
             reportIssue("unexpected child completed out of order")
@@ -336,7 +432,7 @@ extension WorkInspection {
 
         self.children.remove(at: 0)
 
-        if self.children.isEmpty {
+        if self.children.isEmpty && self.subscriptions.isEmpty {
             self.completion = .finished
             self.parent?.childDone(self)
             tester?.removeInspection(self)
@@ -352,7 +448,14 @@ extension WorkInspection {
             throw Failure.message("the count of the children \(children.count) does not match the API offers \(1). please use other API")
         }
 
-        return children[0]
+        let inspection = children[0]
+
+        if inspection.isSubscriptionWork {
+            self.subscriptions.append(inspection)
+            self.children.removeFirst()
+        }
+
+        return inspection
     }
 
     public func subInspections() throws -> (WorkInspection, WorkInspection) {
@@ -360,7 +463,20 @@ extension WorkInspection {
             throw Failure.message("the count of the children \(children.count) does not match the API offers \(2). please use other API")
         }
 
-        return (children[0], children[1])
+        let inspection1 = children[0]
+        let inspection2 = children[1]
+
+        moveSubscriptionInspection(inspection1)
+        moveSubscriptionInspection(inspection2)
+
+        return (inspection1, inspection2)
+    }
+
+    private func moveSubscriptionInspection(_ inspection: WorkInspection) {
+        if inspection.isSubscriptionWork {
+            children.removeAll { $0 == inspection }
+            subscriptions.append(inspection)
+        }
     }
 
     public func subInspections() throws -> (WorkInspection, WorkInspection, WorkInspection) {
@@ -368,7 +484,15 @@ extension WorkInspection {
             throw Failure.message("the count of the children \(children.count) does not match the API offers \(3). please use other API")
         }
 
-        return (children[0], children[1], children[2])
+        let inspection1 = children[0]
+        let inspection2 = children[1]
+        let inspection3 = children[2]
+
+        moveSubscriptionInspection(inspection1)
+        moveSubscriptionInspection(inspection2)
+        moveSubscriptionInspection(inspection3)
+
+        return (inspection1, inspection2, inspection3)
     }
 
     public func subInspections() throws -> (WorkInspection, WorkInspection, WorkInspection, WorkInspection) {
@@ -376,7 +500,17 @@ extension WorkInspection {
             throw Failure.message("the count of the children \(children.count) does not match the API offers \(4). please use other API")
         }
 
-        return (children[0], children[1], children[2], children[3])
+        let inspection1 = children[0]
+        let inspection2 = children[1]
+        let inspection3 = children[2]
+        let inspection4 = children[3]
+
+        moveSubscriptionInspection(inspection1)
+        moveSubscriptionInspection(inspection2)
+        moveSubscriptionInspection(inspection3)
+        moveSubscriptionInspection(inspection4)
+
+        return (inspection1, inspection2, inspection3, inspection4)
     }
 
     public func subInspections() throws -> (WorkInspection, WorkInspection, WorkInspection, WorkInspection, WorkInspection) {
@@ -384,7 +518,19 @@ extension WorkInspection {
             throw Failure.message("the count of the children \(children.count) does not match the API offers \(5). please use other API")
         }
 
-        return (children[0], children[1], children[2], children[3], children[4])
+        let inspection1 = children[0]
+        let inspection2 = children[1]
+        let inspection3 = children[2]
+        let inspection4 = children[3]
+        let inspection5 = children[4]
+
+        moveSubscriptionInspection(inspection1)
+        moveSubscriptionInspection(inspection2)
+        moveSubscriptionInspection(inspection3)
+        moveSubscriptionInspection(inspection4)
+        moveSubscriptionInspection(inspection5)
+
+        return (inspection1, inspection2, inspection3, inspection4, inspection5)
     }
 }
 

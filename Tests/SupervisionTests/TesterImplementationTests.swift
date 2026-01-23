@@ -180,6 +180,25 @@ struct TesterImplementationTests {
         }
         .assertDone()
     }
+
+    @Test
+    func testSubscription() async throws {
+        let tester = Tester<AnimalFeature>(
+            state: Tester<AnimalFeature>.State()
+        )
+
+        let subscription = tester.send(.subscribeToBears)
+            .assertRun { config in
+                #expect(config.fireAndForget)
+            }
+
+        try tester.feedResult(for: subscription, result: .success(["polar", "black"])) { state in
+            #expect(state.bears == ["polar", "black"])
+        }
+        .assertDone()
+
+        subscription.finishStream()
+    }
 }
 
 
@@ -188,6 +207,7 @@ private struct AnimalFeature: FeatureProtocol {
         var dogs: [String] = []
         var cats: [String] = []
         var people: [String] = []
+        var bears: [String] = []
     }
 
     enum CancelID: Hashable, Sendable {
@@ -205,6 +225,8 @@ private struct AnimalFeature: FeatureProtocol {
         case fetchDogsResult(Result<[String], Error>)
         case fetchCatsResult(Result<[String], Error>)
         case fetchPeopleResult(Result<[String], Error>)
+        case subscribeToBears
+        case receivedBears(Result<[String], Error>)
     }
     
     struct Dependency {
@@ -315,6 +337,22 @@ private struct AnimalFeature: FeatureProtocol {
             
             context.modify(\.dogs, to: dogs)
             return .done
+
+        case .subscribeToBears:
+            return .subscribe { dependency in
+                try await dependency.client.subscribeToBears()
+            } map: { result in
+                .receivedBears(result)
+            }
+
+        case .receivedBears(let result):
+            switch result {
+            case .success(let bears):
+                context.modify(\.bears, to: bears)
+            case .failure:
+                return .done
+            }
+            return .done
         }
     }
 }
@@ -334,6 +372,14 @@ final class AnimalClient: Sendable {
 
     func fetchPeople() async throws -> [String] {
         return ["John", "Jane", "Alice"]
+    }
+
+    func subscribeToBears() async throws -> AsyncThrowingStream<[String], Error> {
+        AsyncThrowingStream { cont in
+            cont.yield([])
+
+            cont.onTermination = { _ in }
+        }
     }
 }
 
