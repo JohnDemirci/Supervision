@@ -63,6 +63,11 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
 // MARK: - Perform Work
 
 extension Worker {
+    private enum Registration {
+        case tracked(id: AnyHashableSendable, token: UUID)
+        case untracked(token: UUID)
+    }
+
     private func processRun(
         run: Work<Action, Environment>.Run,
         environment: Environment,
@@ -71,8 +76,26 @@ extension Worker {
         guard handleCancelInFlight(run: run) else { return false }
         guard handleThrottle(run: run) else { return true }
 
+        let task = makeTask(run: run, environment: environment, send: send)
+        let registration = register(task: task, cancellationID: run.configuration.cancellationID)
+
+        if !run.configuration.fireAndForget {
+            defer { cleanup(registration) }
+            await task.value
+            return !task.isCancelled
+        }
+
+        scheduleCleanup(registration, task: task)
+        return true
+    }
+
+    private func makeTask(
+        run: Work<Action, Environment>.Run,
+        environment: Environment,
+        send: @escaping @Sendable (Action) async -> Void
+    ) -> Task<Void, Never> {
         // generally speaking you do not need weak self on Tasks
-        let task = Task<Void, Never>(
+        Task<Void, Never>(
             name: run.configuration.name,
             priority: run.configuration.priority,
             operation: {
@@ -84,44 +107,38 @@ extension Worker {
                 await run.execute(environment, send)
             }
         )
+    }
 
-        var trackedToken: UUID?
-        var untrackedToken: UUID?
-        if let id = run.configuration.cancellationID {
-            let token = UUID()
-            trackedToken = token
+    private func register(
+        task: Task<Void, Never>,
+        cancellationID: AnyHashableSendable?
+    ) -> Registration {
+        let token = UUID()
+        if let id = cancellationID {
             tasks[id] = TrackedTask(token: token, task: task)
-        } else {
-            let token = UUID()
-            untrackedToken = token
-            untracked[token] = task
+            return .tracked(id: id, token: token)
         }
+        untracked[token] = task
+        return .untracked(token: token)
+    }
 
-        if !run.configuration.fireAndForget {
-            await task.value
-            let cancellation = !task.isCancelled
-
-            if let id = run.configuration.cancellationID, let trackedToken {
-                clearTask(id: id, token: trackedToken)
-            } else if let untrackedToken {
-                clearUntrackedTask(untrackedToken)
-            }
-
-            return cancellation
+    private func cleanup(_ registration: Registration) {
+        switch registration {
+        case let .tracked(id, token):
+            clearTask(id: id, token: token)
+        case let .untracked(token):
+            clearUntrackedTask(token)
         }
+    }
 
-        if let id = run.configuration.cancellationID, let token = trackedToken {
-            Task { [weak self] in
-                _ = await task.result
-                await self?.clearTask(id: id, token: token)
-            }
-        } else if let token = untrackedToken {
-            Task { [weak self] in
-                _ = await task.result
-                await self?.clearUntrackedTask(token)
-            }
+    private func scheduleCleanup(
+        _ registration: Registration,
+        task: Task<Void, Never>
+    ) {
+        Task { [weak self] in
+            _ = await task.result
+            await self?.cleanup(registration)
         }
-        return true
     }
 
     private func processMerge(
@@ -186,6 +203,8 @@ extension Worker {
     @inline(__always)
     private func cancelAll() {
         tasks.values.forEach { $0.task.cancel() }
+        untracked.values.forEach { $0.cancel() }
+
         tasks.removeAll()
         untracked.removeAll()
     }
@@ -198,6 +217,7 @@ extension Worker {
 
     @inline(__always)
     private func clearUntrackedTask(_ id: UUID) {
+        untracked[id]?.cancel()
         untracked[id] = nil
     }
 }
