@@ -118,16 +118,13 @@ import Foundation
 /// processing occur on the main thread.
 public protocol FeatureProtocol {
     typealias FeatureWork = Work<Action, Dependency>
-
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
     associatedtype State: Equatable
+    associatedtype Action: Sendable
+    associatedtype Dependency: Sendable
 
     var observationMap: ObservationMap { get }
-
-    associatedtype Action: Sendable
-
-    associatedtype Dependency: Sendable
 
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork
 

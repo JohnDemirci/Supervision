@@ -94,7 +94,6 @@ extension Worker {
         environment: Environment,
         send: @escaping @Sendable (Action) async -> Void
     ) -> Task<Void, Never> {
-        // generally speaking you do not need weak self on Tasks
         Task<Void, Never>(
             name: run.configuration.name,
             priority: run.configuration.priority,
