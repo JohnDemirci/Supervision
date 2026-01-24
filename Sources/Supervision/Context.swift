@@ -30,8 +30,8 @@ public struct Context<State>: ~Copyable {
     }
 
     @inlinable
+    @inline(__always)
     public var state: State {
-        @inlinable
         _read {
             yield statePointer.pointee
         }

@@ -7,40 +7,6 @@
 
 import Foundation
 
-/// A reference-based identifier used to uniquely identify supervisors.
-///
-/// `ReferenceIdentifier` wraps any `Hashable` value and provides reference semantics
-/// for use with `NSMapTable`. This enables ``Board`` to use weak references for
-/// automatic supervisor cleanup.
-///
-/// ## Overview
-///
-/// ReferenceIdentifier is used internally by ``Supervisor`` and ``Board`` to manage
-/// supervisor identity and caching:
-///
-/// - For `Identifiable` state: ID is derived from `state.id`
-/// - For non-identifiable state: ID is based on the feature's type
-///
-/// ## Why Reference Type?
-///
-/// `NSMapTable` requires reference types for weak key storage. ReferenceIdentifier
-/// provides this while maintaining value-based equality through its wrapped `id`.
-///
-/// ## Thread Safety
-///
-/// This class is marked `@unchecked Sendable` because it is immutable—the `id`
-/// property is `let` and `AnyHashable` is value-typed. Once initialized, the
-/// instance cannot be modified, making it safe to share across actor boundaries.
-///
-/// ## Usage
-///
-/// You typically don't create `ReferenceIdentifier` directly. Access it through
-/// a supervisor:
-///
-/// ```swift
-/// let feature = Feature<MyFeature>(state: .init(), dependency: ())
-/// print(feature.id)  // ReferenceIdentifier
-/// ```
 public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Sendable {
     /// The underlying identifier value.
     ///

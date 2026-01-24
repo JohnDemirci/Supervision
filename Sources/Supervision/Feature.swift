@@ -19,60 +19,16 @@ public final class Feature<F: FeatureProtocol>: Observable {
 
     let feature: F
 
-    private nonisolated let logger: Logger
-
     private let actionContinuation: AsyncStream<F.FeatureWork>.Continuation
     private let actionStream: AsyncStream<F.FeatureWork>
     private let dependency: Dependency
-
-    /*
-     one of the shorcomings of the observation mechanism is that computed properties are not notified when a keypath that they are observing changes.
-
-     in oder to address this issue, client needs to provide a map of dependencies for the computed properties where they provide a list of keypaths they want the computed property to be associated to.
-
-     when those provided keypaths mutate, we fire off notification for the computed properties observation token
-     */
     private let observationMap: F.ObservationMap
-
-    /*
-     A Seperate entity is responsible for handling async operations
-
-     I did not want to add too many responsibilities onto Supervisor.
-     Worker is an actor that performs the Side effects and returns the results to the Supervisor
-     */
     private let worker: Worker<Action, Dependency>
 
-    /*
-     sequentially handling async work
+    private nonisolated let logger: Logger
 
-     this is a state management architecture and by design, all async work is done sequentially. There are some exceptions such as FireAndForget.
-     */
     private var processingTask: Task<Void, Never>?
-
-    /*
-     Observation tokens are reference types that are marcked with the @Observable notation
-     Each keypath of the Supervisor's State contains ObservationToken upon first access via the dynamicMember subscript
-     When a mutation occurs for a particular keypath, the observation token's version is incremented to notify the mutation.
-     This observation mechanism is implemented due to shortcomings of the @Observable macro where @Observable cannot be used on Value types (struct & enum)
-     We could annotate the Supervisor itself as @Observable, but it would fire mutation notifications even when the client is not observing the notifying keypath resulting in excessive SwiftUI re-draws.
-     We could create our own macro similar to TCA's @ObservableState but that would involve having to import SwiftSyntax library as well as the complexity of maintaining the macro not to mention added build times on fresh builds. Therefore i went with this manual implementation where each keypath of a value type has an ObservationToken, technically these tokens are observed but whenever a keypath is modified we increment the token to notify the observer.
-     This achieves per-keypath view re-draw for switftui.
-     */
     private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
-
-    /*
-     Purpusefully left as private.
-     The observation system works through keypath basis
-     therefore accessing the _state directly does not track/notify observers.
-     Additionally, one of the principles of this architecture is that mutation happens internally (SwiftUI Binding is the exception)
-     The mutations must occure in the FeatureProtocol and the helper APIs from the Context<State> this is done in order to make the mutations of the state more predictable.
-     Access to the _state can happen multiple ways.
-
-     1) Through Context<State> from FeatureProtocol's process function
-        This function is triggered when the client sends an Action to the Supervisor
-     2) dynamicMember subscript
-        Accessing the state through subscript is what triggers the Observation mechanism of this architecture.
-     */
     private var _state: State
 
     // MARK: - Initialization
@@ -133,18 +89,6 @@ public final class Feature<F: FeatureProtocol>: Observable {
         processingTask?.cancel()
         processingTask = nil
     }
-
-    /*
-     it looks like the observation does not work correctly with dynamic member lookup when we are observing nested keypaths.
-     
-     from what i gathered it looks like the compiler cannot determine that at sn optimized level and therefore ignore it it only viewed as the parent keypath not the nested ones so when a child keypath gets updated the parent is not being updated
-     
-     to negate this behavior instead of using dynamic member lookup we are going to be using a custom function and custom subscript.
-     
-     from the limited testing it looks like the view is updating correctly
-
-     \.state.person.name
-     */
 
     @inline(__always)
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
@@ -219,15 +163,6 @@ extension Feature {
 
 extension Feature {
     public func send(_ action: Action) {
-        // Note: [weak self] is not needed here because this closure is non-escaping.
-        // Although Context stores an @escaping closure (mutateFn), the Context itself
-        // is borrowed (not stored) by feature.process() and is deallocated when this
-        // method returns. The strong capture of self is scoped to this synchronous call.
-
-        /*
-         Using an unsafePointer is safe here because the Context cannot escape the scope of the closre due to the fact that Context is ~Copyable.
-         Because it cannot outlive the scope of this closure, there is no risk of dangling pointers.
-         */
         let work: F.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
@@ -246,9 +181,7 @@ extension Feature {
 
         // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
         if case .cancel = work.operation {
-            Task {
-                await worker.handle(work: work, environment: self.dependency, send: { _ in })
-            }
+            Task { await worker.handle(work: work, environment: self.dependency, send: { _ in }) }
             return
         }
 
