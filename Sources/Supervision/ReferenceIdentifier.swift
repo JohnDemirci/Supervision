@@ -38,8 +38,8 @@ import Foundation
 /// a supervisor:
 ///
 /// ```swift
-/// let supervisor = Supervisor<MyFeature>(state: .init(), dependency: ())
-/// print(supervisor.id)  // ReferenceIdentifier
+/// let feature = Feature<MyFeature>(state: .init(), dependency: ())
+/// print(feature.id)  // ReferenceIdentifier
 /// ```
 public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Sendable {
     /// The underlying identifier value.

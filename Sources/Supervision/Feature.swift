@@ -162,30 +162,6 @@ public final class Feature<F: FeatureProtocol>: Observable {
 // MARK: - Convenience Initializers
 
 public extension Feature where State: Identifiable {
-    /// Creates a supervisor with an identifiable state.
-    ///
-    /// The supervisor's ``id`` is derived from `state.id`, enabling ``Board``
-    /// to cache supervisors based on their state identity:
-    ///
-    /// ```swift
-    /// struct UserFeature: FeatureProtocol {
-    ///     struct State: Identifiable {
-    ///         let id: UUID
-    ///         var name: String
-    ///     }
-    ///     // ...
-    /// }
-    ///
-    /// // Each user gets a unique supervisor
-    /// let userSupervisor = Supervisor<UserFeature>(
-    ///     state: State(id: user.id, name: user.name),
-    ///     dependency: dependencies
-    /// )
-    /// ```
-    ///
-    /// - Parameters:
-    ///   - state: The initial state. Must conform to `Identifiable`.
-    ///   - dependency: Dependencies for executing side effects.
     convenience init(
         state: State,
         dependency: Dependency
@@ -199,34 +175,6 @@ public extension Feature where State: Identifiable {
 }
 
 public extension Feature {
-    /// Creates a supervisor with non-identifiable state.
-    ///
-    /// The supervisor's ``id`` is based on the feature type, meaning all supervisors
-    /// of the same feature type share an identity. This is suitable for singleton
-    /// features or when you don't need identity-based caching:
-    ///
-    /// ```swift
-    /// struct AppFeature: FeatureProtocol {
-    ///     struct State {
-    ///         var isLoggedIn = false
-    ///         var theme: Theme = .system
-    ///     }
-    ///     // ...
-    /// }
-    ///
-    /// // Single app-level supervisor
-    /// let appSupervisor = Supervisor<AppFeature>(
-    ///     state: State(),
-    ///     dependency: dependencies
-    /// )
-    /// ```
-    ///
-    /// - Parameters:
-    ///   - state: The initial state.
-    ///   - dependency: Dependencies for executing side effects.
-    ///
-    /// - Note: If your state conforms to `Identifiable`, the other initializer
-    ///   is used automatically, deriving ID from `state.id`.
     convenience init(
         state: State,
         dependency: Dependency
@@ -323,8 +271,6 @@ extension Feature {
 // MARK: - Supervisor + Direct Binding
 
 extension Feature {
-    /// Applies a mutation directly to the state for a specific keyPath.
-    /// Used internally by `directBinding` for direct state mutations.
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
         _state[keyPath: keyPath] = value
         notifyChange(for: keyPath)

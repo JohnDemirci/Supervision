@@ -7,12 +7,6 @@
 
 import Foundation
 
-/// Board oversees the lifecycle of Supervisors. When a Supervisor is in the memory, it will be returned upon request.
-/// If the supervisor is not in the memory, it will be created and then returned.
-///
-/// - Important: You must have only **ONE** Board within the entire application for the intended use case. Otherwise you may risk multiple identical Supervisors being present in the memory.
-///
-/// - Note: You should initialize the board when you launch your application where you instantiate all the dependencies of your application at the root level. The Dependency generic is used to create Supervisors and that should be the Application's entire dependencies that will be used when requesting a Supervisor.
 @Observable
 @MainActor
 public final class FeatureContainer<Dependency> {
@@ -44,14 +38,6 @@ public final class FeatureContainer<Dependency> {
 }
 
 extension FeatureContainer {
-    /// Provides a **Supervisor** which has a generic over the given Feature.
-    /// If the supervisor exists within the memory, it will be returned, otherwise a new instance is created
-    ///
-    /// - Parameters:
-    ///    - state: Feature.State
-    ///    - dependencyClosure: Closure capturing the Application's Dependency and returns Feature's Dependency
-    ///
-    /// - Returns: ``Supervisor<Feature>``
     public func supervisor<F: FeatureProtocol>(
         state: F.State,
         _ dependencyClosure: @Sendable @escaping (Dependency) -> F.Dependency
@@ -61,15 +47,6 @@ extension FeatureContainer {
         }
     }
 
-    /// Provides a **Supervisor** which has a generic over the given Feature.
-    /// If the supervisor exists within the memory, it will be returned, otherwise a new instance is created
-    ///
-    /// - Parameters:
-    ///    - type: Feature.self
-    ///    - state: Feature.State
-    ///    - dependencyClosure: Closure capturing the Application's Dependency and returns Feature's Dependency
-    ///
-    /// - Returns: ``Supervisor<Feature>``
     public func supervisor<F: FeatureProtocol>(
         type _: F.Type = F.self,
         state: F.State,
@@ -80,14 +57,6 @@ extension FeatureContainer {
         }
     }
 
-    /// Provides a **Supervisor** which has a generic over the given Feature.
-    /// If the supervisor exists within the memory, it will be returned, otherwise a new instance is created
-    ///
-    /// - Parameters:
-    ///    - type: Feature.self
-    ///    - state: Feature.State
-    ///
-    /// - Returns: ``Supervisor<Feature>``
     public func supervisor<F: FeatureProtocol>(
         type _: F.Type = F.self,
         state: F.State
@@ -97,13 +66,6 @@ extension FeatureContainer {
         }
     }
 
-    /// Provides a **Supervisor** which has a generic over the given Feature.
-    /// If the supervisor exists within the memory, it will be returned, otherwise a new instance is created
-    ///
-    /// - Parameters:
-    ///    - state: Feature.State
-    ///
-    /// - Returns: ``Supervisor<Feature>``
     public func supervisor<F: FeatureProtocol>(
         state: F.State
     ) -> Feature<F> where F.Dependency == Void, F.State: Identifiable {
