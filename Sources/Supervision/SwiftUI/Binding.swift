@@ -25,22 +25,24 @@ extension Feature {
     ///
     /// ## Example Usage
     /// ```swift
-    /// struct UserFeature: FeatureProtocol {
-    ///     struct State {
+    /// struct UserFeature: FeatureBlueprint {
+    ///     struct State: Equatable {
     ///         var name: String = ""
     ///         var email: String = ""
     ///         var age: Int = 0
     ///         var isEnabled: Bool = false
     ///     }
     ///
-    ///     enum Action {
+    ///     enum Action: Sendable {
     ///         case nameChanged(String)
     ///         case emailChanged(String)
     ///         case ageChanged(Int)
     ///         case toggleEnabled(Bool)
     ///     }
     ///
-    ///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+    ///     typealias Dependency = Void
+    ///
+    ///     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
     ///         switch action {
     ///         case .nameChanged(let name):
     ///             context.modify(\.name, to: name.trimmingCharacters(in: .whitespaces))
@@ -54,25 +56,25 @@ extension Feature {
     ///         case .toggleEnabled(let enabled):
     ///             context.modify(\.isEnabled, to: enabled)
     ///         }
-    ///         return .empty()
+    ///         return .done
     ///     }
     /// }
     ///
     /// struct UserView: View {
-    ///     @State private var supervisor = Supervisor<UserFeature>(.init())
+    ///     @State private var feature = Feature<UserFeature>(state: .init(), dependency: ())
     ///
     ///     var body: some View {
     ///         Form {
     ///             // Basic binding (no animation)
     ///             TextField(
     ///                 "Name",
-    ///                 text: supervisor.binding(\.name, send: { .nameChanged($0) })
+    ///                 text: feature.binding(\.name, send: { .nameChanged($0) })
     ///             )
     ///
     ///             // Binding with custom animation
     ///             Toggle(
     ///                 "Enabled",
-    ///                 isOn: supervisor.binding(
+    ///                 isOn: feature.binding(
     ///                     \.isEnabled,
     ///                     send: { .toggleEnabled($0) },
     ///                     animation: .spring(response: 0.3)
@@ -81,10 +83,10 @@ extension Feature {
     ///
     ///             // Animation modifier creates transaction automatically
     ///             Stepper(
-    ///                 "Age: \(supervisor.state.age)",
-    ///                 value: supervisor.binding(\.age, send: { .ageChanged($0) })
+    ///                 "Age: \(feature.state.age)",
+    ///                 value: feature.binding(\.age, send: { .ageChanged($0) })
     ///             )
-    ///             .animation(.easeInOut, value: supervisor.state.age)
+    ///             .animation(.easeInOut, value: feature.state.age)
     ///         }
     ///     }
     /// }
@@ -198,20 +200,22 @@ extension Feature {
     ///
     /// ## Example Usage
     /// ```swift
-    /// struct SettingsFeature: FeatureProtocol {
-    ///     struct State {
+    /// struct SettingsFeature: FeatureBlueprint {
+    ///     struct State: Equatable {
     ///         var volume: Double = 50      // UI state - ok for direct binding
     ///         var brightness: Double = 75  // UI state - ok for direct binding
     ///         var username: String = ""    // Business logic - use action binding!
     ///     }
     ///
-    ///     enum Action {
+    ///     enum Action: Sendable {
     ///         case usernameChanged(String)
     ///         case saveSettings
     ///         case volumeChangeCompleted(Double)
     ///     }
     ///
-    ///     func process(action: Action, context: borrowing Context<State>) -> Work<Action, Void> {
+    ///     typealias Dependency = Void
+    ///
+    ///     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
     ///         switch action {
     ///         case .usernameChanged(let username):
     ///             context.modify(\.username, to: username)
@@ -225,25 +229,25 @@ extension Feature {
     ///             // Volume was mutated directly via directBinding
     ///             break
     ///         }
-    ///         return .empty()
+    ///         return .done
     ///     }
     /// }
     ///
     /// struct SettingsView: View {
-    ///     @State private var supervisor = Supervisor<SettingsFeature>(.init())
+    ///     @State private var feature = Feature<SettingsFeature>(state: .init(), dependency: ())
     ///
     ///     var body: some View {
     ///         Form {
     ///             // Direct binding with smooth spring animation
     ///             VStack {
-    ///                 Text("Volume: \(Int(supervisor.state.volume))")
+    ///                 Text("Volume: \(Int(feature.state.volume))")
     ///                 Slider(
-    ///                     value: supervisor.directBinding(\.volume, animation: .spring),
+    ///                     value: feature.directBinding(\.volume, animation: .spring),
     ///                     in: 0...100,
     ///                     onEditingChanged: { editing in
     ///                         if !editing {
     ///                             // Send action when user finishes dragging
-    ///                             supervisor.send(.volumeChangeCompleted(supervisor.state.volume))
+    ///                             feature.send(.volumeChangeCompleted(feature.state.volume))
     ///                         }
     ///                     }
     ///                 )
@@ -251,22 +255,22 @@ extension Feature {
     ///
     ///             // Direct binding for brightness
     ///             VStack {
-    ///                 Text("Brightness: \(Int(supervisor.state.brightness))")
+    ///                 Text("Brightness: \(Int(feature.state.brightness))")
     ///                 Slider(
-    ///                     value: supervisor.directBinding(\.brightness),
+    ///                     value: feature.directBinding(\.brightness),
     ///                     in: 0...100
     ///                 )
-    ///                 .animation(.easeInOut, value: supervisor.state.brightness)
+    ///                 .animation(.easeInOut, value: feature.state.brightness)
     ///             }
     ///
     ///             // Action binding for business logic
     ///             TextField(
     ///                 "Username",
-    ///                 text: supervisor.binding(\.username, send: { .usernameChanged($0) })
+    ///                 text: feature.binding(\.username, send: { .usernameChanged($0) })
     ///             )
     ///
     ///             Button("Save Settings") {
-    ///                 supervisor.send(.saveSettings)
+    ///                 feature.send(.saveSettings)
     ///             }
     ///         }
     ///     }

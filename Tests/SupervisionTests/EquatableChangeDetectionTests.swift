@@ -27,7 +27,7 @@ struct EquatableChangeDetectionTests {
         var value: Int = 0
     }
 
-    struct TestFeature: FeatureProtocol {
+    struct TestFeature: FeatureBlueprint {
         typealias State = TestState
         typealias Dependency = Void
 

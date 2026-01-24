@@ -16,7 +16,7 @@ This document captures the goals for the Supervision library, explains how the c
 Create a lightweight state management architecture that streamlines common processes such as fetching data, canceling network requests, and observation.
 
 **Alignment in code**
-- `FeatureProtocol` defines the feature boundary (State, Action, Dependency, and `process`).
+- `FeatureBlueprint` defines the feature boundary (State, Action, Dependency, and `process`).
 - `Feature` is the runtime owner of state and observation tokens.
 - `Context` provides safe, zero-copy reads and controlled mutations.
 - `Work` models side effects (run, cancel, merge, concatenate).
@@ -24,7 +24,7 @@ Create a lightweight state management architecture that streamlines common proce
 
 **Example**
 ```swift
-struct TodosFeature: FeatureProtocol {
+struct TodosFeature: FeatureBlueprint {
     struct State: Equatable {
         var todos: [String] = []
         var isLoading = false
@@ -74,17 +74,17 @@ struct TodosFeature: FeatureProtocol {
 ## Goal 2: Granular observation with chained key paths
 
 **Goal**
-Create an observation mechanism where changes to value-type properties are notified smartly. It should work with chained key paths (e.g. `\.some.nested.value`) and notify only views that observe the affected data. The significance of this work is that observation library by apple only supports reference types and other libraries use swift macros by importing swift syntax directly. Supervision however, handles this issue without relying on macros.
+Create an observation mechanism where changes to value-type properties are notified precisely. It should work with chained key paths (e.g. `\.some.nested.value`) and notify only views that observe the affected data. Apple's Observation framework targets reference types, and other libraries lean on Swift macros via SwiftSyntax. Supervision handles this without macros.
 
 **Alignment in code**
 - `Feature` stores per-keypath `ObservationToken`s to drive granular updates.
 - `Feature.read(_:)` and `Feature[subscript:]` track reads for any key path, including nested ones.
 - `Context.modify` only triggers notifications when values actually change (Equatable fast path).
-- `FeatureProtocol.observationMap` lets you declare computed-property dependencies.
+- `FeatureBlueprint.observationMap` lets you declare computed-property dependencies.
 
 **Example: chained key path reads**
 ```swift
-struct ProfileFeature: FeatureProtocol {
+struct ProfileFeature: FeatureBlueprint {
     struct State: Equatable {
         var user = User()
         struct User: Equatable { var name = ""; var age = 0 }
@@ -106,7 +106,7 @@ let name = feature[\.user.name] // Tracks nested key path
 
 **Example: computed-property dependencies**
 ```swift
-struct NameFeature: FeatureProtocol {
+struct NameFeature: FeatureBlueprint {
     struct State: Equatable {
         var first = ""
         var last = ""
@@ -187,7 +187,7 @@ struct AppDependency {
 }
 
 let container = FeatureContainer(dependency: AppDependency(api: .live))
-let todos = container.supervisor(state: TodosFeature.State()) { $0.api }
+let todos = container.feature(state: TodosFeature.State()) { $0.api }
 ```
 
 ## Goal 6: Stable feature identity for reuse
@@ -201,7 +201,7 @@ Feature objects are identifiable. If `State` is `Identifiable`, the identity is 
 
 **Example**
 ```swift
-struct UserFeature: FeatureProtocol {
+struct UserFeature: FeatureBlueprint {
     struct State: Identifiable, Equatable { let id: UUID; var name: String }
     enum Action: Sendable { case rename(String) }
     typealias Dependency = Void

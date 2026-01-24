@@ -16,7 +16,7 @@ struct AppDependency {
 
 final class UserClient: Sendable {}
 
-struct UserFeature: FeatureProtocol {
+struct UserFeature: FeatureBlueprint {
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         switch action {
         case .changeName(let newName):
@@ -38,7 +38,7 @@ struct UserFeature: FeatureProtocol {
     }
 }
 
-struct DeviceFeature: FeatureProtocol {
+struct DeviceFeature: FeatureBlueprint {
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         return .done
     }
@@ -57,7 +57,7 @@ struct DeviceFeature: FeatureProtocol {
     }
 }
 
-struct VoidFeature: FeatureProtocol {
+struct VoidFeature: FeatureBlueprint {
     typealias Dependency = Void
 
     struct State: Equatable {}
@@ -71,7 +71,7 @@ struct VoidFeature: FeatureProtocol {
     }
 }
 
-struct IdentifiableVoidFeature: FeatureProtocol {
+struct IdentifiableVoidFeature: FeatureBlueprint {
     typealias Dependency = Void
     
     struct State: Identifiable, Equatable {
@@ -90,92 +90,92 @@ struct IdentifiableVoidFeature: FeatureProtocol {
 @MainActor
 @Suite("FeatureContainer")
 struct FeatureContainerTests {
-    @Test func identicalSupervisors() async throws {
+    @Test func identicalfeatures() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
-        let userSupervisor: Feature<UserFeature> = FeatureContainer.supervisor(
+        let userfeature: Feature<UserFeature> = FeatureContainer.feature(
             state: UserFeature.State()) {
                 UserFeature.Dependency(client: $0.userClient)
             }
         
-        let anotherSupervisor: Feature<UserFeature> = FeatureContainer.supervisor(
+        let anotherfeature: Feature<UserFeature> = FeatureContainer.feature(
             state: UserFeature.State()) {
                 UserFeature.Dependency(client: $0.userClient)
             }
         
-        #expect(userSupervisor === anotherSupervisor)
+        #expect(userfeature === anotherfeature)
 
-        #expect(FeatureContainer.numberOfSupervisors == 1)
+        #expect(FeatureContainer.numberOffeatures == 1)
     }
     
     @Test
-    func identicalIndetifiableSupervisorsReturnsTheSameSupervisor() async throws {
+    func identicalIndetifiablefeaturesReturnsTheSamefeature() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
         let deviceState1 = DeviceFeature.State(id: "1")
-        let deviceSupervisor: Feature<DeviceFeature> = FeatureContainer.supervisor(
+        let devicefeature: Feature<DeviceFeature> = FeatureContainer.feature(
             state: deviceState1) {
                 DeviceFeature.Dependency(client: $0.userClient)
             }
         
-        let deviceSupervisor2: Feature<DeviceFeature> = FeatureContainer.supervisor(
+        let devicefeature2: Feature<DeviceFeature> = FeatureContainer.feature(
             state: deviceState1) {
                 DeviceFeature.Dependency(client: $0.userClient)
             }
         
-        #expect(deviceSupervisor === deviceSupervisor2)
+        #expect(devicefeature === devicefeature2)
     }
     
-    @Test func multipleSupervisorsWithDifferentIdentities() async throws {
+    @Test func multiplefeaturesWithDifferentIdentities() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
         let deviceState1 = DeviceFeature.State(id: "1")
-        let deviceSupervisor: Feature<DeviceFeature> = FeatureContainer.supervisor(
+        let devicefeature: Feature<DeviceFeature> = FeatureContainer.feature(
             state: deviceState1) {
                 DeviceFeature.Dependency(client: $0.userClient)
             }
         
         let deviceState2 = DeviceFeature.State(id: "2")
-        let deviceSupervisor2: Feature<DeviceFeature> = FeatureContainer.supervisor(
+        let devicefeature2: Feature<DeviceFeature> = FeatureContainer.feature(
             state: deviceState2) {
                 DeviceFeature.Dependency(client: $0.userClient)
             }
         
-        // Verify that different identities create different supervisors
-        #expect(deviceSupervisor !== deviceSupervisor2)
-        #expect(FeatureContainer.numberOfSupervisors == 2)
+        // Verify that different identities create different features
+        #expect(devicefeature !== devicefeature2)
+        #expect(FeatureContainer.numberOffeatures == 2)
     }
     
     @Test func voidDependency() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
-        let void1: Feature<VoidFeature> = FeatureContainer.supervisor(state: VoidFeature.State())
-        let void2: Feature<VoidFeature> = FeatureContainer.supervisor(state: VoidFeature.State())
+        let void1: Feature<VoidFeature> = FeatureContainer.feature(state: VoidFeature.State())
+        let void2: Feature<VoidFeature> = FeatureContainer.feature(state: VoidFeature.State())
         
         #expect(void1 === void2)
-        #expect(FeatureContainer.numberOfSupervisors == 1)
+        #expect(FeatureContainer.numberOffeatures == 1)
     }
     
     @Test func identifiableVoidDependency() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
-        let void1: Feature<IdentifiableVoidFeature> = FeatureContainer.supervisor(
+        let void1: Feature<IdentifiableVoidFeature> = FeatureContainer.feature(
             state: .init(id: "1"))
-        let void2: Feature<IdentifiableVoidFeature> = FeatureContainer.supervisor(
+        let void2: Feature<IdentifiableVoidFeature> = FeatureContainer.feature(
             state: .init(id: "2"))
         
         #expect(void1 !== void2)
-        #expect(FeatureContainer.numberOfSupervisors == 2)
+        #expect(FeatureContainer.numberOffeatures == 2)
     }
     
     @Test
-    func identifiableVoidDependencyReturnsTheSameSupervisor() async throws {
+    func identifiableVoidDependencyReturnsTheSamefeature() async throws {
         let FeatureContainer = FeatureContainer(dependency: AppDependency())
         
-        let void1: Feature<IdentifiableVoidFeature> = FeatureContainer.supervisor(
+        let void1: Feature<IdentifiableVoidFeature> = FeatureContainer.feature(
             state: .init(id: "1"))
         
-        let void2: Feature<IdentifiableVoidFeature> = FeatureContainer.supervisor(
+        let void2: Feature<IdentifiableVoidFeature> = FeatureContainer.feature(
             state: .init(id: "1"))
         
         #expect(void1 === void2)

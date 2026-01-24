@@ -255,9 +255,9 @@ extension Work {
     /// - Note: Works that fail or throw error do not effect the other works.
     ///
     /// - Parameters:
-    ///    - works: A variadic list of ``Work<Output, Environment>``
+    ///    - works: A variadic list of ``Work``
     ///
-    /// - Returns: A ``Work<Output, Environment>`` merged with the provided works.
+    /// - Returns: A ``Work`` merged with the provided works.
     public static func merge(_ works: Work<Output, Environment>...) -> Self {
         merge(works)
     }
@@ -269,9 +269,9 @@ extension Work {
     /// - Important: Maximum number of works a person can put in is 5.
     ///
     /// - Parameters:
-    ///    - works: An array of ``Work<Output, Environment>``
+    ///    - works: An array of ``Work``
     ///
-    /// - Returns: A ``Work<Output, Environment>`` merged with the provided works.
+    /// - Returns: A ``Work`` merged with the provided works.
     public static func merge(_ works: [Work<Output, Environment>]) -> Self {
         let nonEmptyWorks = works.filter {
             if case .done = $0.operation { return false }
@@ -300,9 +300,9 @@ extension Work {
     /// - Note: Upon failure, the remaining works will not be fired off.
     ///
     /// - Parameters:
-    ///    - works: A variadic list of ``Work<Output, Environment>``
+    ///    - works: A variadic list of ``Work``
     ///
-    /// - Returns: ``Work<Output, Environment>`` containing the provided works to be run sequentially.
+    /// - Returns: ``Work`` containing the provided works to be run sequentially.
     public static func concatenate(_ works: Work<Output, Environment>...) -> Self {
         concatenate(works)
     }
@@ -312,9 +312,9 @@ extension Work {
     /// - Note: Upon failure, the remaining works will not be fired off.
     ///
     /// - Parameters:
-    ///    - works: An array of ``Work<Output, Environment>``
+    ///    - works: An array of ``Work``
     ///
-    /// - Returns: ``Work<Output, Environment>`` containing the provided works to be run sequentially.
+    /// - Returns: ``Work`` containing the provided works to be run sequentially.
     public static func concatenate(_ works: [Work<Output, Environment>]) -> Self {
         let nonEmptyWorks = works.filter {
             if case .done = $0.operation { return false }
@@ -381,7 +381,7 @@ extension Work {
 
     /// Updates the priortiy of the Task for the Work.
     ///
-    /// - Note: This function only updates if the Work operation is ``Work.Operation.run``, ``Work.Operation.concatenate``, ``Work.Operation.merge``
+    /// - Note: This function only updates if the Work operation is `Work.Operation.run`, `Work.Operation.concatenate`, `Work.Operation.merge`
     ///
     /// - Parameters:
     ///    - priority: The task priority.

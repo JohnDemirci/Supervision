@@ -10,7 +10,7 @@ import OSLog
 import IssueReporting
 
 @dynamicMemberLookup
-public final class Tester<Feature: FeatureProtocol> {
+public final class Tester<Feature: FeatureBlueprint> {
     enum Failure: Error, CustomStringConvertible {
         case message(String)
 
@@ -126,7 +126,7 @@ public final class Tester<Feature: FeatureProtocol> {
 
 // MARK: - WorkInspection
 
-public final class WorkInspection<Feature: FeatureProtocol>: Identifiable, Hashable {
+public final class WorkInspection<Feature: FeatureBlueprint>: Identifiable, Hashable {
     public typealias Action = Feature.Action
     public typealias Dependency = Feature.Dependency
 

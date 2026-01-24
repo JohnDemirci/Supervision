@@ -20,8 +20,9 @@ public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Senda
     }
 
     /*
-     in case a feature's state conforms to the identifiable protocol and andother feature's state's id is the same as the first feature, their ids may collide.
-     therefore this initializer is implemented where the objectIdentifier(Feature.swlf) is added in order to make sure the ids across features never collide.
+     In case a feature's state conforms to Identifiable and another feature's state has the same id,
+     their identifiers may collide. This initializer includes the feature type identifier to avoid
+     collisions across feature types.
      */
     init(_ ids: AnyHashable...) {
         precondition(!ids.isEmpty, "ReferenceIdentifier requires at least one ID")

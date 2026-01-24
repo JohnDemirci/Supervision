@@ -9,8 +9,28 @@ import Foundation
 import Observation
 import OSLog
 
+/// The source-of-truth owner for a feature's state, similar to stores in Redux and TCA.
+///
+/// ## Feature Identity ##
+/// Each feature exposes a stable `id`. If `State` conforms to `Identifiable`, the identity combines
+/// `state.id` with the feature type. Otherwise, the identity is based on the feature type alone.
+///
+/// ## Observation ##
+/// ``Feature`` provides observation built on Swift's Observation framework while supporting value-type `State`.
+/// Chained key-path reads (e.g. `\.some.nested.value`) notify observers only when that specific property changes.
+///
+/// ## Action Dispatch ##
+/// ``Feature`` uses an `AsyncStream` to dispatch actions sequentially. Exceptions:
+/// 1) cancellation ``Work`` is handled immediately instead of waiting in the queue, and
+/// 2) subscriptions do not block the stream while they run.
+///
+/// Actions can be dispatched by calling the ``send(_:)`` function of the ``Feature``.
+///
+/// ## SwiftUI Bindings ##
+/// ``Feature`` provides public APIs for SwiftUI bindings. More information can be found at
+/// ``binding(_:send:animation:)``, ``directBinding(_:)``, and ``directBinding(_:animation:)``.
 @MainActor
-public final class Feature<F: FeatureProtocol>: Observable {
+public final class Feature<F: FeatureBlueprint>: Observable {
     public typealias Action = F.Action
     public typealias Dependency = F.Dependency
     public typealias State = F.State
@@ -162,6 +182,10 @@ extension Feature {
 }
 
 extension Feature {
+    /// Dispatches an action to be performed by the ``Feature``'s `Worker`
+    ///
+    /// - Parameters:
+    ///    - action: Action to be performed
     public func send(_ action: Action) {
         let work: F.FeatureWork = withUnsafeMutablePointer(
             to: &_state
@@ -201,7 +225,7 @@ extension Feature {
     }
 }
 
-// MARK: - Supervisor + Direct Binding
+// MARK: - Feature + Direct Binding
 
 extension Feature {
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {

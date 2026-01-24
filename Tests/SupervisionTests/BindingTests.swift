@@ -11,7 +11,7 @@ import Testing
 
 // MARK: - Test Features
 
-struct FormFeature: FeatureProtocol {
+struct FormFeature: FeatureBlueprint {
     typealias Dependency = Void
 
     struct State: Equatable {
@@ -73,7 +73,7 @@ struct FormFeature: FeatureProtocol {
 
 }
 
-struct UIStateFeature: FeatureProtocol {
+struct UIStateFeature: FeatureBlueprint {
     typealias Dependency = Void
 
     struct State: Equatable {
@@ -239,7 +239,7 @@ struct BindingTests {
     @Test("action binding vs direct binding behavior")
     func testActionVsDirectBindingComparison() async throws {
         // Feature with both business logic and UI state
-        struct MixedFeature: FeatureProtocol {
+        struct MixedFeature: FeatureBlueprint {
             typealias Dependency = Void
 
             struct State: Equatable {
@@ -354,7 +354,7 @@ struct BindingTests {
 
     @Test("hybrid pattern - direct binding with completion action")
     func testHybridPatternDirectBindingWithCompletionAction() async throws {
-        struct VolumeFeature: FeatureProtocol {
+        struct VolumeFeature: FeatureBlueprint {
             func process(action: Action, context: borrowing Supervision.Context<State>) -> FeatureWork {
                 switch action {
                 case .volumeChangeCompleted(let volume):

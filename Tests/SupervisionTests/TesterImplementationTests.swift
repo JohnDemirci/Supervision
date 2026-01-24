@@ -202,7 +202,7 @@ struct TesterImplementationTests {
 }
 
 
-private struct AnimalFeature: FeatureProtocol {
+private struct AnimalFeature: FeatureBlueprint {
     struct State: Equatable {
         var dogs: [String] = []
         var cats: [String] = []

@@ -10,7 +10,7 @@ import Testing
 
 // MARK: - Test Feature
 
-private struct CounterFeature: FeatureProtocol {
+private struct CounterFeature: FeatureBlueprint {
     typealias Dependency = Void
 
     struct State: Equatable {

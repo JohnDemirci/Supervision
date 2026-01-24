@@ -12,7 +12,7 @@ import Observation
 
 // MARK: - Test Feature
 
-struct ObservationTestFeature: FeatureProtocol {
+struct ObservationTestFeature: FeatureBlueprint {
     struct State: Equatable {
         var count: Int = 0
         var name: String = ""
@@ -24,7 +24,15 @@ struct ObservationTestFeature: FeatureProtocol {
             var firstName: String = ""
             var lastName: String = ""
             var age: Int = 0
+            
+            var fullName: String {
+                "\(firstName) \(lastName)"
+            }
         }
+    }
+    
+    var observationMap: ObservationMap {
+        [\.user.fullName: [\.user.firstName, \.user.lastName]]
     }
 
     typealias Dependency = Void
