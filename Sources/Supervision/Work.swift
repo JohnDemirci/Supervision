@@ -7,6 +7,12 @@
 
 import Foundation
 import IssueReporting
+import ValueObservation
+
+@ObservableValue
+struct Counter {
+    var count: Int = 0
+}
 
 // artifical limit to how many works users can add for merge and concatenate
 private let _maxGroupedWorks: Int = 5

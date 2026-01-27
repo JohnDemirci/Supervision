@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import OSLog
+@_exported import ValueObservation
 
 /// The source-of-truth owner for a feature's state, similar to stores in Redux and TCA.
 ///
@@ -30,6 +31,7 @@ import OSLog
 /// ``Feature`` provides public APIs for SwiftUI bindings. More information can be found at
 /// ``binding(_:send:animation:)``, ``directBinding(_:)``, and ``directBinding(_:animation:)``.
 @MainActor
+@dynamicMemberLookup
 public final class Feature<F: FeatureBlueprint>: Observable {
     public typealias Action = F.Action
     public typealias Dependency = F.Dependency
@@ -42,13 +44,11 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     private let actionContinuation: AsyncStream<F.FeatureWork>.Continuation
     private let actionStream: AsyncStream<F.FeatureWork>
     private let dependency: Dependency
-    private let observationMap: F.ObservationMap
     private let worker: Worker<Action, Dependency>
 
     private nonisolated let logger: Logger
 
     private var processingTask: Task<Void, Never>?
-    private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
     private var _state: State
 
     // MARK: - Initialization
@@ -69,16 +69,6 @@ public final class Feature<F: FeatureBlueprint>: Observable {
             of: F.FeatureWork.self,
             bufferingPolicy: .unbounded
         )
-
-        // reverse the observationMap provided by the feature
-        // this makes it easier to notify the changes
-        self.observationMap = feature.observationMap.reduce(
-            into: F.ObservationMap()
-        ) { partialResult, kvp in
-            kvp.value.forEach { valueKeypath in
-                partialResult[valueKeypath, default: []].append(kvp.key)
-            }
-        }
 
         self.actionStream = stream
         self.actionContinuation = continuation
@@ -112,13 +102,11 @@ public final class Feature<F: FeatureBlueprint>: Observable {
 
     @inline(__always)
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
-        trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
     }
 
     @inline(__always)
     public func read<T>(_ keypath: KeyPath<State, T>) -> T {
-        trackAccess(for: keypath)
         return _state[keyPath: keypath]
     }
 }
@@ -151,36 +139,6 @@ public extension Feature {
     }
 }
 
-// MARK: - Observation
-
-extension Feature {
-    @inline(__always)
-    private func token(for keyPath: PartialKeyPath<State>) -> ObservationToken {
-        if let existing = _observationTokens[keyPath] {
-            return existing
-        }
-        let newToken = ObservationToken()
-        _observationTokens[keyPath] = newToken
-        return newToken
-    }
-
-    @inline(__always)
-    private func trackAccess<Value>(for keyPath: KeyPath<State, Value>) {
-        _ = token(for: keyPath).version
-    }
-
-    @inline(__always)
-    private func notifyChange(for keyPath: PartialKeyPath<State>) {
-        _observationTokens[keyPath]?.increment()
-
-        if let computedPropertyKeypaths = observationMap[keyPath] {
-            computedPropertyKeypaths.forEach { computedPropertyKeypath in
-                _observationTokens[computedPropertyKeypath]?.increment()
-            }
-        }
-    }
-}
-
 extension Feature {
     /// Dispatches an action to be performed by the ``Feature``'s `Worker`
     ///
@@ -193,9 +151,6 @@ extension Feature {
             let context = Context<F.State>(
                 mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
-                    self.notifyChange(for: mutation.keyPath)
-
-                    self.logger.debug("\(mutation.keyPath.debugDescription) has changed")
                 },
                 statePointer: UnsafePointer(pointer)
             )
@@ -230,26 +185,14 @@ extension Feature {
 extension Feature {
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
         _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
     }
 
     @discardableResult
     func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
         let currentValue = _state[keyPath: keyPath]
         guard currentValue != value else { return false }
-
         _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
         return true
-    }
-}
-
-@Observable
-final class ObservationToken: @unchecked Sendable {
-    var version: Int = 0
-
-    func increment() {
-        version += 1
     }
 }
 
@@ -257,4 +200,13 @@ extension Feature where State: Identifiable {
     static func makeID(from id: State.ID) -> ReferenceIdentifier {
         ReferenceIdentifier(id, ObjectIdentifier(F.self))
     }
+}
+
+extension Feature {
+  /// Direct access to state.
+  public var state: State { _state }
+
+  public subscript<Value>(dynamicMember keyPath: KeyPath<State, Value>) -> Value {
+    _state[keyPath: keyPath]
+  }
 }

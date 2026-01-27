@@ -1,5 +1,5 @@
 {
-  "originHash" : "695f731fc53e615027a23223888916ea3bd18e08f553f9d3176a352e48c9d7de",
+  "originHash" : "cf6677832b7612bf2d62c4645fad2a7c1f3ce0a9e9efc6db208250b1acda132f",
   "pins" : [
     {
       "identity" : "swift-issue-reporting",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "34e463e98ab8541c604af706c99bed7160f5ec70",
         "version" : "1.8.1"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
+        "version" : "602.0.0"
       }
     }
   ],

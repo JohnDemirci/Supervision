@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ValueObservation
 
 /// A blueprint protocol that defines the core requirements for a feature in the Supervision architecture.
 ///
@@ -70,8 +71,8 @@ public protocol FeatureBlueprint {
     typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
     /// Source of truth for the Feature's state
-    associatedtype State: Equatable
-    
+    associatedtype State: Equatable, ObservableValue
+
     /// Actions that are dispatched, or a result of users' interactions
     associatedtype Action: Sendable
     
