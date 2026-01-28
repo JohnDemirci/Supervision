@@ -36,7 +36,6 @@ public struct Context<State>: ~Copyable {
         state[keyPath: keyPath]
     }
 
-    /// Immutable state with zero-copy lookup
     @inlinable
     @inline(__always)
     public var state: State {

@@ -104,6 +104,22 @@ let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
 let name = feature[\.user.name] // Tracks nested key path
 ```
 
+**Example: scoped key path reads with parent tracking**
+```swift
+let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
+let name = feature
+    .scope(\.user)
+    .value(\.name)
+// Deeper nesting can use multi-arg overloads:
+// let value = feature.scope(\.parent1, \.parent2, \.parent3).value(\.child)
+```
+
+**Example: key path reads without parent tracking**
+```swift
+let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
+let name = feature[\.user.name]
+```
+
 **Example: computed-property dependencies**
 ```swift
 struct NameFeature: FeatureBlueprint {
