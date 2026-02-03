@@ -60,7 +60,7 @@ public final class Feature<F: FeatureBlueprint>: Observable {
         self.worker = Worker()
         self.feature = F()
         self.id = id
-        self.logger = .init(subsystem: "com.Supervision.\(F.self)", category: "Supervisor")
+        self.logger = .init(subsystem: "com.Supervision.\(F.self)", category: "Feature.\(id)")
         self._state = state
 
         let (stream, continuation) = AsyncStream.makeStream(
