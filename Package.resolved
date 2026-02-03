@@ -1,5 +1,5 @@
 {
-  "originHash" : "695f731fc53e615027a23223888916ea3bd18e08f553f9d3176a352e48c9d7de",
+  "originHash" : "72e4889f81245cc7f1e1b4fe3921de34dd712479e3b2979056578237e7e664d3",
   "pins" : [
     {
       "identity" : "swift-issue-reporting",
@@ -8,6 +8,24 @@
       "state" : {
         "revision" : "34e463e98ab8541c604af706c99bed7160f5ec70",
         "version" : "1.8.1"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "f99ae8aa18f0cf0d53481901f88a0991dc3bd4a2",
+        "version" : "601.0.1"
+      }
+    },
+    {
+      "identity" : "valueobservation",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/JohnDemirci/ValueObservation.git",
+      "state" : {
+        "revision" : "9186c3b5394183e517349d81ab76a429d9620603",
+        "version" : "1.0.2"
       }
     }
   ],

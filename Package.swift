@@ -20,7 +20,11 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/swift-issue-reporting.git", from: .init(1, 8, 1))
+        .package(url: "https://github.com/pointfreeco/swift-issue-reporting.git", from: .init(1, 8, 1)),
+        .package(
+            url: "https://github.com/JohnDemirci/ValueObservation.git",
+            .upToNextMajor(from: "1.0.2")
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -29,6 +33,7 @@ let package = Package(
             name: "Supervision",
             dependencies: [
                 .product(name: "IssueReporting", package: "swift-issue-reporting"),
+                .product(name: "ValueObservation", package: "ValueObservation"),
             ],
             swiftSettings: [
                 .defaultIsolation(nil)
