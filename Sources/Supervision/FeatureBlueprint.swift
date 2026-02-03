@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ValueObservation
 
 /// A blueprint protocol that defines the core requirements for a feature in the Supervision architecture.
 ///
@@ -67,37 +68,15 @@ import Foundation
 /// - ``Context`` for state access and scoping
 public protocol FeatureBlueprint {
     typealias FeatureWork = Work<Action, Dependency>
-    typealias ObservationMap = [PartialKeyPath<State>: [PartialKeyPath<State>]]
 
     /// Source of truth for the Feature's state
-    associatedtype State: Equatable
-    
+    associatedtype State: Equatable, ObservableValue
+
     /// Actions that are dispatched, or a result of users' interactions
     associatedtype Action: Sendable
     
     /// Typically a struct that contains all the dependencies such as RESTClient to perform work.
     associatedtype Dependency: Sendable
-
-    /// Computed-property observation map. This manual mechanism makes value types observable
-    /// without Swift macros or importing `SwiftSyntax`.
-    ///
-    /// ## Usage ##
-    ///```swift
-    /// struct User: Equatable {
-    ///     var firstName: String = ""
-    ///     var lastName: String = ""
-    ///     var age: Int = 0
-    ///
-    ///     var fullName: String {
-    ///         "\(firstName) \(lastName)"
-    ///     }
-    /// }
-    ///
-    /// var observationMap: ObservationMap {
-    ///     [\.fullName: [\.firstName, \.lastName]]
-    /// }
-    ///```
-    var observationMap: ObservationMap { get }
 
     /// Processes dispatched actions and returns an instance of ``Work``
     ///
@@ -109,10 +88,6 @@ public protocol FeatureBlueprint {
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork
 
     init()
-}
-
-extension FeatureBlueprint {
-    public var observationMap: ObservationMap { [:] }
 }
 
 @usableFromInline

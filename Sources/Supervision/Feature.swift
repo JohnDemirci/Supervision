@@ -42,13 +42,11 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     private let actionContinuation: AsyncStream<F.FeatureWork>.Continuation
     private let actionStream: AsyncStream<F.FeatureWork>
     private let dependency: Dependency
-    private let observationMap: F.ObservationMap
     private let worker: Worker<Action, Dependency>
 
     private nonisolated let logger: Logger
 
     private var processingTask: Task<Void, Never>?
-    private var _observationTokens: [PartialKeyPath<State>: ObservationToken] = [:]
     private var _state: State
 
     // MARK: - Initialization
@@ -69,16 +67,6 @@ public final class Feature<F: FeatureBlueprint>: Observable {
             of: F.FeatureWork.self,
             bufferingPolicy: .unbounded
         )
-
-        // reverse the observationMap provided by the feature
-        // this makes it easier to notify the changes
-        self.observationMap = feature.observationMap.reduce(
-            into: F.ObservationMap()
-        ) { partialResult, kvp in
-            kvp.value.forEach { valueKeypath in
-                partialResult[valueKeypath, default: []].append(kvp.key)
-            }
-        }
 
         self.actionStream = stream
         self.actionContinuation = continuation
@@ -112,13 +100,11 @@ public final class Feature<F: FeatureBlueprint>: Observable {
 
     @inline(__always)
     public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
-        trackAccess(for: keyPath)
         return _state[keyPath: keyPath]
     }
 
     @inline(__always)
     public func read<T>(_ keypath: KeyPath<State, T>) -> T {
-        trackAccess(for: keypath)
         return _state[keyPath: keypath]
     }
 }
@@ -151,41 +137,6 @@ public extension Feature {
     }
 }
 
-// MARK: - Observation
-
-extension Feature {
-    @inline(__always)
-    private func token(for keyPath: PartialKeyPath<State>) -> ObservationToken {
-        if let existing = _observationTokens[keyPath] {
-            return existing
-        }
-        let newToken = ObservationToken()
-        _observationTokens[keyPath] = newToken
-        return newToken
-    }
-
-    @inline(__always)
-    fileprivate func trackAccess(for keyPath: PartialKeyPath<State>) {
-        _ = token(for: keyPath).version
-    }
-
-    @inline(__always)
-    fileprivate func readUntracked<Value>(_ keyPath: KeyPath<State, Value>) -> Value {
-        _state[keyPath: keyPath]
-    }
-
-    @inline(__always)
-    private func notifyChange(for keyPath: PartialKeyPath<State>) {
-        _observationTokens[keyPath]?.increment()
-
-        if let computedPropertyKeypaths = observationMap[keyPath] {
-            computedPropertyKeypaths.forEach { computedPropertyKeypath in
-                _observationTokens[computedPropertyKeypath]?.increment()
-            }
-        }
-    }
-}
-
 extension Feature {
     /// Dispatches an action to be performed by the ``Feature``'s `Worker`
     ///
@@ -198,7 +149,6 @@ extension Feature {
             let context = Context<F.State>(
                 mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
-                    self.notifyChange(for: mutation.keyPath)
                 },
                 statePointer: UnsafePointer(pointer)
             )
@@ -233,7 +183,6 @@ extension Feature {
 extension Feature {
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
         _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
     }
 
     @discardableResult
@@ -242,17 +191,7 @@ extension Feature {
         guard currentValue != value else { return false }
 
         _state[keyPath: keyPath] = value
-        notifyChange(for: keyPath)
         return true
-    }
-}
-
-@Observable
-final class ObservationToken: @unchecked Sendable {
-    var version: Int = 0
-
-    func increment() {
-        version += 1
     }
 }
 
@@ -260,176 +199,4 @@ extension Feature where State: Identifiable {
     static func makeID(from id: State.ID) -> ReferenceIdentifier {
         ReferenceIdentifier(id, ObjectIdentifier(F.self))
     }
-}
-
-public extension Feature {
-    @MainActor
-    struct Scope<Current> {
-        @usableFromInline
-        let feature: Feature<F>
-
-        @usableFromInline
-        let keyPath: KeyPath<State, Current>
-
-        @usableFromInline
-        let trackedKeyPaths: [PartialKeyPath<State>]
-
-        @inline(__always)
-        @inlinable
-        init(
-            feature: Feature<F>,
-            keyPath: KeyPath<State, Current>,
-            trackedKeyPaths: [PartialKeyPath<State>]
-        ) {
-            self.feature = feature
-            self.keyPath = keyPath
-            self.trackedKeyPaths = trackedKeyPaths
-        }
-
-        @inline(__always)
-        @inlinable
-        public func scope<Next>(_ keyPath: KeyPath<Current, Next>) -> Scope<Next> {
-            let composed = self.keyPath.appending(path: keyPath)
-            return Scope<Next>(
-                feature: feature,
-                keyPath: composed,
-                trackedKeyPaths: trackedKeyPaths + [composed]
-            )
-        }
-
-        @inline(__always)
-        public func value<Value>(_ keyPath: KeyPath<Current, Value>) -> Value {
-            let composed = self.keyPath.appending(path: keyPath)
-            trackedKeyPaths.forEach { feature.trackAccess(for: $0) }
-            feature.trackAccess(for: composed)
-            return feature.readUntracked(composed)
-        }
-
-        @inline(__always)
-        @inlinable
-        public subscript<Value>(_ keyPath: KeyPath<Current, Value>) -> Value {
-            value(keyPath)
-        }
-    }
-}
-
-public extension Feature {
-    @inlinable
-    func scope<Current>(_ keyPath: KeyPath<State, Current>) -> Scope<Current> {
-        Scope(feature: self, keyPath: keyPath, trackedKeyPaths: [keyPath])
-    }
-
-    @inlinable
-    func scope<Parent, Child>(
-        _ parent: KeyPath<State, Parent>,
-        _ child: KeyPath<Parent, Child>
-    ) -> Child {
-        scope(parent).value(child)
-    }
-
-    @inlinable
-    func scope<First, Second, Third>(
-        _ first: KeyPath<State, First>,
-        _ second: KeyPath<First, Second>,
-        _ third: KeyPath<Second, Third>
-    ) -> Scope<Third> {
-        scope(first).scope(second).scope(third)
-    }
-
-    @inlinable
-    func scope<First, Second, Third, Fourth>(
-        _ first: KeyPath<State, First>,
-        _ second: KeyPath<First, Second>,
-        _ third: KeyPath<Second, Third>,
-        _ fourth: KeyPath<Third, Fourth>
-    ) -> Scope<Fourth> {
-        scope(first)
-            .scope(second)
-            .scope(third)
-            .scope(fourth)
-    }
-
-    @inlinable
-    func scope<First, Second, Third, Fourth, Fifth>(
-        _ first: KeyPath<State, First>,
-        _ second: KeyPath<First, Second>,
-        _ third: KeyPath<Second, Third>,
-        _ fourth: KeyPath<Third, Fourth>,
-        _ fifth: KeyPath<Fourth, Fifth>
-    ) -> Scope<Fifth> {
-        scope(first)
-            .scope(second)
-            .scope(third)
-            .scope(fourth)
-            .scope(fifth)
-    }
-}
-
-struct UserFeature: FeatureBlueprint {
-    typealias Dependency = Void
-
-    struct State: Equatable {
-        var name: String = ""
-        var lastName: String = ""
-        var address: Address = .init()
-    }
-
-    struct Address: Equatable {
-        var street: String = ""
-        var city: String = ""
-    }
-
-    enum Action: Sendable {
-        case setName(String)
-        case setLastName(String)
-        case setStreet(String)
-        case setCity(String)
-        case reset
-    }
-
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-        switch action {
-        case .reset:
-            context.modify(\.address, to: .init())
-            return .done
-        case .setCity(let city):
-            context.modify(\.address.city, to: city)
-            return .done
-        case .setLastName(let lastName):
-            context.modify(\.lastName, to: lastName)
-            return .done
-        case .setName(let name):
-            context.modify(\.name, to: name)
-            return .done
-        case .setStreet(let street):
-            context.modify(\.address.street, to: street)
-            return .done
-        @unknown default:
-            return .done
-        }
-    }
-}
-
-import SwiftUI
-
-struct SampleView: View {
-    @State private var feature: Feature<UserFeature> = .init(
-        state: UserFeature.State(),
-        dependency: ()
-    )
-
-    var body: some View {
-        let _ = Self._printChanges()
-        VStack {
-            Text("street2: \(feature.scope(\.address).value(\.street))")
-            TextField("street", text: feature.directBinding(\.address.street))
-            Button("reset") {
-                feature.send(.reset)
-            }
-        }
-    }
-}
-
-#Preview {
-    SampleView()
 }
