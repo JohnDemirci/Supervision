@@ -47,7 +47,9 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     private nonisolated let logger: Logger
 
     private var processingTask: Task<Void, Never>?
-    private var _state: State
+
+    @usableFromInline
+    internal var _state: State
 
     // MARK: - Initialization
 
@@ -98,14 +100,11 @@ public final class Feature<F: FeatureBlueprint>: Observable {
         processingTask = nil
     }
 
-    @inline(__always)
-    public subscript<T>(_ keyPath: KeyPath<State, T>) -> T {
-        return _state[keyPath: keyPath]
-    }
-
-    @inline(__always)
-    public func read<T>(_ keypath: KeyPath<State, T>) -> T {
-        return _state[keyPath: keypath]
+    @inlinable
+    public var state: State {
+        _read {
+            yield self._state
+        }
     }
 }
 
@@ -169,7 +168,7 @@ extension Feature {
         switch work.operation {
         case .done:
             return
-        default:
+        case .concatenate, .merge, .run, .cancel:
             await worker.handle(work: work, environment: dependency) { @MainActor [weak self] action in
                 guard let self else { return }
                 send(action)
@@ -189,7 +188,6 @@ extension Feature {
     func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
         let currentValue = _state[keyPath: keyPath]
         guard currentValue != value else { return false }
-
         _state[keyPath: keyPath] = value
         return true
     }

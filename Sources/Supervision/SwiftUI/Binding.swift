@@ -151,8 +151,7 @@ extension Feature {
     ) -> Binding<Value> {
         Binding(
             get: {
-                // Read current value with granular observation tracking
-                self.read(keyPath)
+                self._state[keyPath: keyPath]
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -366,7 +365,7 @@ extension Feature {
     ) -> Binding<Value> {
         Binding(
             get: {
-                self.read(keyPath)
+                self._state[keyPath: keyPath]
             },
             set: { newValue, transaction in
                 // Determine which animation to use
@@ -402,21 +401,16 @@ extension Feature {
     ) -> Binding<Value> {
         Binding(
             get: {
-                // Read current value with granular observation tracking
-                self.read(keyPath)
+                self._state[keyPath: keyPath]
             },
             set: { newValue, transaction in
-                // Determine which animation to use
-                // Priority: transaction.animation > custom animation > none
                 let effectiveAnimation = transaction.animation ?? animation
 
                 if let animation = effectiveAnimation {
-                    // Apply animation when mutating state (with Equatable check)
                     withAnimation(animation) {
                         _ = self.applyDirectMutation(keyPath: keyPath, value: newValue)
                     }
                 } else {
-                    // No animation - immediate update (with Equatable check)
                     self.applyDirectMutation(keyPath: keyPath, value: newValue)
                 }
             }
