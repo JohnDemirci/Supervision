@@ -31,7 +31,6 @@ public actor FeatureHub {
         return stream
     }
 
-    /// Broadcasts a message to all current subscribers.
     public func send(_ message: some BroadcastMessage) {
         guard !continuations.isEmpty else { return }
 
@@ -49,7 +48,6 @@ public actor FeatureHub {
         }
     }
 
-    /// Finishes all active streams and clears subscribers.
     public func finish() {
         for continuation in continuations.values {
             continuation.finish()

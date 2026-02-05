@@ -150,7 +150,7 @@ extension Work {
                         catch is CancellationError { return }
                         catch { await send(map(.failure(error))) }
                     },
-                    testPlan: isTesting() ? TestPlan(
+                    testPlan: isTesting ? TestPlan(
                         kind: .task,
                         expectedInputType: Result<Value, Error>.self,
                         isContinuous: false,
@@ -201,7 +201,7 @@ extension Work {
                             await send(map(.failure(error)))
                         }
                     },
-                    testPlan: isTesting() ? TestPlan(
+                    testPlan: isTesting ? TestPlan(
                         kind: .stream,
                         expectedInputType: Value.self,
                         isContinuous: true,
