@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import OSLog
+@_exported import ValueObservation
 
 /// The source-of-truth owner for a feature's state, similar to stores in Redux and TCA.
 ///
@@ -30,6 +31,7 @@ import OSLog
 /// ``Feature`` provides public APIs for SwiftUI bindings. More information can be found at
 /// ``binding(_:send:animation:)``, ``directBinding(_:)``, and ``directBinding(_:animation:)``.
 @MainActor
+@dynamicMemberLookup
 public final class Feature<F: FeatureBlueprint>: Observable {
     public typealias Action = F.Action
     public typealias Dependency = F.Dependency
@@ -106,6 +108,10 @@ public final class Feature<F: FeatureBlueprint>: Observable {
             yield self._state
         }
     }
+
+    public subscript<Value>(dynamicMember member: KeyPath<State, Value>) -> Value {
+        state[keyPath: member]
+    }
 }
 
 // MARK: - Convenience Initializers
@@ -121,6 +127,16 @@ public extension Feature where State: Identifiable {
             dependency: dependency
         )
     }
+
+    convenience init(
+        state: State
+    ) where Dependency == Void {
+        self.init(
+            id: Self.makeID(from: state.id),
+            state: state,
+            dependency: ()
+        )
+    }
 }
 
 public extension Feature {
@@ -129,9 +145,19 @@ public extension Feature {
         dependency: Dependency
     ) {
         self.init(
-            id: ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self) as AnyHashable),
+            id: Self.makeID(),
             state: state,
             dependency: dependency
+        )
+    }
+
+    convenience init(
+        state: State
+    ) where Dependency == Void {
+        self.init(
+            id: Self.makeID(),
+            state: state,
+            dependency: ()
         )
     }
 }
@@ -149,7 +175,8 @@ extension Feature {
                 mutateFn: { @MainActor mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer)
+                statePointer: UnsafePointer(pointer),
+                id: id
             )
 
             return self.feature.process(action: action, context: context)
@@ -196,5 +223,11 @@ extension Feature {
 extension Feature where State: Identifiable {
     static func makeID(from id: State.ID) -> ReferenceIdentifier {
         ReferenceIdentifier(id, ObjectIdentifier(F.self))
+    }
+}
+
+extension Feature {
+    static func makeID() -> ReferenceIdentifier {
+        ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))
     }
 }

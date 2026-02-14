@@ -9,8 +9,9 @@ import Foundation
 import OSLog
 import IssueReporting
 
+@MainActor
 @dynamicMemberLookup
-public final class Tester<Feature: FeatureBlueprint> {
+public final class Tester<F: FeatureBlueprint> {
     enum Failure: Error, CustomStringConvertible {
         case message(String)
 
@@ -22,24 +23,26 @@ public final class Tester<Feature: FeatureBlueprint> {
         }
     }
 
-    public typealias Action = Feature.Action
-    public typealias Dependency = Feature.Dependency
-    public typealias State = Feature.State
+    public typealias Action = F.Action
+    public typealias Dependency = F.Dependency
+    public typealias State = F.State
 
-    let feature: Feature
+    let F: F
     private var _state: State
+    let id: ReferenceIdentifier
 
-    private var inspectionList: Set<WorkInspection<Feature>> = []
+    private var inspectionList: Set<WorkInspection<F>> = []
 
-    deinit {
+    isolated deinit {
         if !inspectionList.isEmpty {
             reportIssue("pending inspections: \(inspectionList)")
         }
     }
 
-    public init(state: State) {
-        self.feature = .init()
+    init(state: State, id: ReferenceIdentifier) {
+        self.F = .init()
         self._state = state
+        self.id = id
     }
 
     public subscript<Subject>(
@@ -49,10 +52,10 @@ public final class Tester<Feature: FeatureBlueprint> {
     }
 
     public func feedResult<Value>(
-        for inspection: WorkInspection<Feature>,
+        for inspection: WorkInspection<F>,
         result: Result<Value, Error>,
         assertion: (State) -> Void
-    ) throws -> WorkInspection<Feature> {
+    ) throws -> WorkInspection<F> {
         inspection.assertRun()
         let action = try inspection.feedResult(result)
         return send(action, assertion: assertion)
@@ -61,18 +64,19 @@ public final class Tester<Feature: FeatureBlueprint> {
     public func send(
         _ action: Action,
         assertion: (State) -> Void = { _ in }
-    ) -> WorkInspection<Feature> {
-        let work: Feature.FeatureWork = withUnsafeMutablePointer(
+    ) -> WorkInspection<F> {
+        let work: F.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
-            let context = Context<Feature.State>(
+            let context = Context<F.State>(
                 mutateFn: { mutation in
                     mutation.apply(&pointer.pointee)
                 },
-                statePointer: UnsafePointer(pointer)
+                statePointer: UnsafePointer(pointer),
+                id: id
             )
 
-            return self.feature.process(action: action, context: context)
+            return self.F.process(action: action, context: context)
         }
         
         assertion(_state)
@@ -80,11 +84,11 @@ public final class Tester<Feature: FeatureBlueprint> {
         return WorkInspection(work: work, tester: self)
     }
 
-    func registerInspection(_ inspection: WorkInspection<Feature>) {
+    func registerInspection(_ inspection: WorkInspection<F>) {
         inspectionList.insert(inspection)
     }
 
-    func removeInspection(_ inspection: WorkInspection<Feature>) {
+    func removeInspection(_ inspection: WorkInspection<F>) {
         guard let originalInspection = inspectionList.firstIndex(of: inspection) else {
             reportIssue("attempted to get inspection when there is no entry in teh inspectionlist")
             return
@@ -124,11 +128,23 @@ public final class Tester<Feature: FeatureBlueprint> {
     }
 }
 
+extension Tester where State: Identifiable {
+    public convenience init(
+        state: State
+    ) {
+        self.init(
+            state: state,
+            id: Feature<F>.makeID(from: state.id)
+        )
+    }
+}
+
 // MARK: - WorkInspection
 
-public final class WorkInspection<Feature: FeatureBlueprint>: Identifiable, Hashable {
-    public typealias Action = Feature.Action
-    public typealias Dependency = Feature.Dependency
+@MainActor
+public final class WorkInspection<F: FeatureBlueprint>: Identifiable, @preconcurrency Hashable {
+    public typealias Action = F.Action
+    public typealias Dependency = F.Dependency
 
     enum Completion: Hashable, Sendable {
         case pending
@@ -144,7 +160,7 @@ public final class WorkInspection<Feature: FeatureBlueprint>: Identifiable, Hash
     fileprivate var operationAssertionDone = false
 
     fileprivate weak var parent: WorkInspection?
-    fileprivate weak var tester: Tester<Feature>?
+    fileprivate weak var tester: Tester<F>?
 
     var isSubscriptionWork: Bool {
         guard case .run(let run) = work.operation else {
@@ -161,7 +177,7 @@ public final class WorkInspection<Feature: FeatureBlueprint>: Identifiable, Hash
 
     init(
         work: Work<Action, Dependency>,
-        tester: Tester<Feature>,
+        tester: Tester<F>,
         parent: WorkInspection? = nil
     ) {
         var identifier: AnyHashableSendable?
@@ -335,18 +351,18 @@ extension WorkInspection {
         _ plan: Work<Action, Dependency>.TestPlan
     ) throws -> Action {
         guard plan.expectedInputType == Result<Value, Error>.self else {
-            throw Tester<Feature>.Failure.message("mismatching expectation for \(Value.self)")
+            throw Tester<F>.Failure.message("mismatching expectation for \(Value.self)")
         }
 
         let outputs = plan.feed(.taskResult(result))
 
         guard let output = outputs.first else {
-            throw Tester<Feature>.Failure.message("did not receive an output")
+            throw Tester<F>.Failure.message("did not receive an output")
         }
 
         if let parent = parent {
             guard parent.children.first?.id == self.id else {
-                throw Tester<Feature>.Failure.message("unexpected child completed out of order")
+                throw Tester<F>.Failure.message("unexpected child completed out of order")
             }
             self.completion = .finished
             parent.childDone(self)
@@ -392,7 +408,7 @@ extension WorkInspection {
 
         guard let plan = run.testPlan else {
             tester?.removeInspection(self.id)
-            throw Tester<Feature>.Failure.message("there is no test plan for this")
+            throw Tester<F>.Failure.message("there is no test plan for this")
         }
 
         return switch plan.kind {
@@ -419,7 +435,7 @@ extension WorkInspection {
         }
     }
 
-    func childDone(_ child: WorkInspection<Feature>) {
+    func childDone(_ child: WorkInspection<F>) {
         guard child.id == self.children.first?.id else {
             reportIssue("unexpected child completed out of order")
             return

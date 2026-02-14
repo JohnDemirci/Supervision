@@ -18,7 +18,7 @@ public final class ReferenceIdentifier: Identifiable, Hashable, @unchecked Senda
     init(id: AnyHashable) {
         self.id = id
     }
-
+    
     /*
      In case a feature's state conforms to Identifiable and another feature's state has the same id,
      their identifiers may collide. This initializer includes the feature type identifier to avoid

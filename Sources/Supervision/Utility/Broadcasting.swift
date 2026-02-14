@@ -7,23 +7,23 @@
 
 import Foundation
 
-public actor FeatureHub {
+public actor Broadcaster {
     public typealias Message = any BroadcastMessage
 
-    private var continuations: [UUID: AsyncStream<Message>.Continuation]
+    private var continuations: [ReferenceIdentifier: AsyncStream<Message>.Continuation]
 
     public init() {
         continuations = [:]
     }
 
     public func subscribe(
-        bufferingPolicy: AsyncStream<Message>.Continuation.BufferingPolicy = .unbounded
+        bufferingPolicy: AsyncStream<Message>.Continuation.BufferingPolicy = .unbounded,
+        id: ReferenceIdentifier
     ) -> AsyncStream<Message> {
         let (stream, continuation) = AsyncStream.makeStream(
             of: Message.self,
             bufferingPolicy: bufferingPolicy
         )
-        let id = UUID()
         continuations[id] = continuation
         continuation.onTermination = { [weak self] _ in
             Task { await self?.removeSubscriber(id) }
@@ -31,10 +31,10 @@ public actor FeatureHub {
         return stream
     }
 
-    public func send(_ message: some BroadcastMessage) {
+    public func broadcast(message: some BroadcastMessage) {
         guard !continuations.isEmpty else { return }
 
-        var terminated: [UUID] = []
+        var terminated: [ReferenceIdentifier] = []
         for (id, continuation) in continuations {
             if case .terminated = continuation.yield(message) {
                 terminated.append(id)
@@ -55,7 +55,7 @@ public actor FeatureHub {
         continuations.removeAll()
     }
 
-    private func removeSubscriber(_ id: UUID) {
+    private func removeSubscriber(_ id: ReferenceIdentifier) {
         continuations[id] = nil
     }
 }
@@ -63,5 +63,5 @@ public actor FeatureHub {
 public protocol BroadcastMessage: Sendable {
     var date: Date { get }
     var title: String { get }
-    var sender: ReferenceIdentifier { get }
+    var sender: ReferenceIdentifier? { get }
 }

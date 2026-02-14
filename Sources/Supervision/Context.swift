@@ -20,13 +20,17 @@ public struct Context<State>: ~Copyable {
     @usableFromInline
     internal let statePointer: UnsafePointer<State>
 
+    public let id: ReferenceIdentifier
+
     @inlinable
     internal init(
         mutateFn: @escaping (AnyMutation<State>) -> Void,
-        statePointer: UnsafePointer<State>
+        statePointer: UnsafePointer<State>,
+        id: ReferenceIdentifier
     ) {
         self.mutateFn = mutateFn
         self.statePointer = statePointer
+        self.id = id
     }
 
     // MARK: - Zero-Copy Reads

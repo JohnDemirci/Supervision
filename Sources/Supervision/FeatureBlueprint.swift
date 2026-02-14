@@ -66,7 +66,7 @@ import ValueObservation
 /// See also:
 /// - ``Work`` for describing mutations and effects
 /// - ``Context`` for state access and scoping
-public protocol FeatureBlueprint {
+public protocol FeatureBlueprint: Sendable {
     typealias FeatureWork = Work<Action, Dependency>
 
     /// Source of truth for the Feature's state
