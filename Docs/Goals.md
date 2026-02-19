@@ -1,30 +1,34 @@
 # Supervision Goals
 
-This document captures the goals for the Supervision library, explains how the current codebase aligns to them, and provides focused code samples for each goal.
+This document captures the goals of the Supervision library and maps each goal to what is implemented today.
 
 ## Core Principles
 
-- Value-type state with granular observation.
-- Controlled state mutation via a single `process` entrypoint.
-- Async work is modeled explicitly and can be cancelled, throttled, debounced, merged, or concatenated.
-- Feature instances are reusable and identity-based across modules.
-- Testing is first-class and does not require dependency mocking.
+- Feature logic is modeled through `FeatureBlueprint` (`State`, `Action`, `Dependency`, and `process`).
+- State is value-based and observable (`State: Equatable & ObservableValue`).
+- State mutations happen through `Context`, with `Feature` as source-of-truth owner.
+- Side effects are explicit through `Work` and executed by `Worker`.
+- Feature identity is stable and supports reuse via `FeatureContainer`.
+- Testing is built into the architecture via `Tester` and `WorkInspection`.
 
-## Goal 1: Lightweight state management with focused building blocks
+## Goal 1: Lightweight feature model
 
 **Goal**
-Create a lightweight state management architecture that streamlines common processes such as fetching data, canceling network requests, and observation.
+Provide a small, explicit architecture for state, actions, dependencies, and effectful work.
 
 **Alignment in code**
-- `FeatureBlueprint` defines the feature boundary (State, Action, Dependency, and `process`).
-- `Feature` is the runtime owner of state and observation tokens.
-- `Context` provides safe, zero-copy reads and controlled mutations.
-- `Work` models side effects (run, cancel, merge, concatenate).
-- `Worker` executes Work and handles cancellations, debounce, and throttle.
+- `FeatureBlueprint` defines the boundary for each feature.
+- `Feature.send(_:)` is the action entrypoint.
+- `Context` is passed to `process(action:context:)` for reads and writes.
+- `Work<Action, Dependency>` is the return type for follow-up work.
 
 **Example**
 ```swift
+import Supervision
+import ValueObservation
+
 struct TodosFeature: FeatureBlueprint {
+    @ObservableValue
     struct State: Equatable {
         var todos: [String] = []
         var isLoading = false
@@ -32,8 +36,7 @@ struct TodosFeature: FeatureBlueprint {
 
     enum Action: Sendable {
         case refresh
-        case response([String])
-        case failed(Error)
+        case response(Result<[String], Error>)
     }
 
     struct Dependency: Sendable {
@@ -46,24 +49,17 @@ struct TodosFeature: FeatureBlueprint {
             context.modify(\.isLoading, to: true)
             return .run { env in
                 try await env.fetch()
-            } map: { result in
-                switch result {
-                case .success(let todos):
-                    return .response(todos)
-                case .failure(let error):
-                    return .failed(error)
-                }
-            }
+            } map: { .response($0) }
             .cancellable(id: "todos.fetch", cancelInFlight: true)
 
-        case .response(let todos):
+        case .response(.success(let todos)):
             context.modify { batch in
                 batch.set(\.todos, to: todos)
                 batch.set(\.isLoading, to: false)
             }
             return .done
 
-        case .failed:
+        case .response(.failure):
             context.modify(\.isLoading, to: false)
             return .done
         }
@@ -71,24 +67,28 @@ struct TodosFeature: FeatureBlueprint {
 }
 ```
 
-## Goal 2: Granular observation with chained key paths
+## Goal 2: Value-type observation with granular updates
 
 **Goal**
-Create an observation mechanism where changes to value-type properties are notified precisely. It should work with chained key paths (e.g. `\.some.nested.value`) and notify only views that observe the affected data. Apple's Observation framework targets reference types, and other libraries lean on Swift macros via SwiftSyntax. Supervision handles this without macros.
+Support observation for value-type state and nested properties without forcing store-wide invalidation.
 
 **Alignment in code**
-- `Feature` stores per-keypath `ObservationToken`s to drive granular updates.
-- `Feature.read(_:)` and `Feature[subscript:]` track reads for any key path, including nested ones.
-- `Context.modify` only triggers notifications when values actually change (Equatable fast path).
-- `FeatureBlueprint.observationMap` lets you declare computed-property dependencies.
+- `FeatureBlueprint.State` must conform to `ObservableValue`.
+- `Feature` exposes state reads (`state` and dynamic member lookup).
+- `Shared` provides a focused, observable projection for a key path (with optional mapping).
 
-**Example: chained key path reads**
+**Example**
 ```swift
+import Supervision
+import ValueObservation
+
 struct ProfileFeature: FeatureBlueprint {
+    @ObservableValue
     struct State: Equatable {
         var user = User()
-        struct User: Equatable { var name = ""; var age = 0 }
+        struct User: Equatable { var name = "" }
     }
+
     enum Action: Sendable { case setName(String) }
     typealias Dependency = Void
 
@@ -100,189 +100,207 @@ struct ProfileFeature: FeatureBlueprint {
     }
 }
 
-let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
-let name = feature[\.user.name] // Tracks nested key path
+let feature = Feature<ProfileFeature>(state: .init())
+let sharedName = Shared(feature: feature, keypath: \.user.name)
+let currentName = sharedName.value
 ```
 
-**Example: scoped key path reads with parent tracking**
-```swift
-let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
-let name = feature
-    .scope(\.user)
-    .value(\.name)
-// Deeper nesting can use multi-arg overloads:
-// let value = feature.scope(\.parent1, \.parent2, \.parent3).value(\.child)
-```
-
-**Example: key path reads without parent tracking**
-```swift
-let feature = Feature<ProfileFeature>(state: .init(), dependency: ())
-let name = feature[\.user.name]
-```
-
-**Example: computed-property dependencies**
-```swift
-struct NameFeature: FeatureBlueprint {
-    @ObservableValue
-    struct State: Equatable {
-        var first = ""
-        var last = ""
-        var full: String { "\(first) \(last)" }
-    }
-
-    enum Action: Sendable { case setFirst(String) }
-    typealias Dependency = Void
-
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-        if case .setFirst(let first) = action {
-            context.modify(\.first, to: first)
-        }
-        return .done
-    }
-}
-```
-
-## Goal 3: Zero-copy reads when interacting with Context
+## Goal 3: Zero-copy reads and controlled mutation via `Context`
 
 **Goal**
-Zero-copy reads on state when interacting with `Context`.
+Make state reads efficient and keep writes constrained to feature processing.
 
 **Alignment in code**
-- `Context.state` uses `_read` and an unsafe pointer to yield state without copying.
-- `Context` is `~Copyable`, so it cannot escape the `process` scope.
+- `Context` is `~Copyable`, so it cannot be copied or escaped from `process`.
+- `Context.state` uses `_read` and an internal pointer to avoid unnecessary copies.
+- `Context.modify` has `Equatable`-optimized and unconditional overloads.
+- `BatchBuilder` supports grouped mutations.
 
 **Example**
 ```swift
 func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-    let count = context.state.count // zero-copy read
-    if count > 10 { /* ... */ }
+    if context.state.count > 100 {
+        context.modify(\.isOverLimit, to: true)
+    }
+
+    context.modify { batch in
+        batch.set(\.lastUpdatedAt, to: .now)
+        batch.set(\.count, to: context.state.count + 1)
+    }
+
     return .done
 }
 ```
 
-## Goal 4: Controlled state mutation via `process`
+## Goal 4: Explicit async work and lifecycle control
 
 **Goal**
-State mutations only happen in a controlled environment (the `process` function, through `Context`).
+Represent side effects explicitly and support cancellation, throttling, debouncing, and composition.
 
 **Alignment in code**
-- `Feature` keeps `_state` private and exposes mutation only through `Context.modify`.
-- `Context.modify` supports equatable checks to prevent no-op writes.
-- SwiftUI `directBinding` is an explicit opt-in escape hatch for UI-only state.
+- `Work.Operation` supports `.done`, `.cancel`, `.run`, `.merge`, `.concatenate`.
+- `Work` provides `.run`, `.subscribe`, `.fireAndForget`, `.send`.
+- `Work` modifiers: `.named`, `.cancellable`, `.priority`, `.throttle`, `.debounce`, `.map`.
+- `Worker` handles in-flight tracking, cancellation IDs, throttle timestamps, and async execution.
+- `Feature.send(_:)` executes `.cancel` work immediately; other work is queued through `AsyncStream`.
+- `merge` and `concatenate` accept up to 5 non-empty works.
 
 **Example**
-```swift
-func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-    switch action {
-    case .increment:
-        context.modify(\.count) { $0 += 1 }
-        return .done
-    case .setName(let name):
-        context.modify(\.name, to: name.trimmingCharacters(in: .whitespaces))
-        return .done
-    }
-}
-```
-
-## Goal 5: Reuse Feature instances across modules with automatic lifecycle
-
-**Goal**
-Multi-module applications can reuse existing features in memory. The lifecycle of `Feature` objects is handled by `FeatureContainer`, where objects are weakly held and automatically deallocated.
-
-**Alignment in code**
-- `FeatureContainer` uses `NSMapTable` with weak references.
-- Repeated requests for the same ID return the same instance, if still alive.
-
-**Example**
-```swift
-struct AppDependency {
-    let api: API
-}
-
-let container = FeatureContainer(dependency: AppDependency(api: .live))
-let todos = container.feature(state: TodosFeature.State()) { $0.api }
-```
-
-## Goal 6: Stable feature identity for reuse
-
-**Goal**
-Feature objects are identifiable. If `State` is `Identifiable`, the identity is `Feature.self + state.id`. If not, identity is `Feature.self`.
-
-**Alignment in code**
-- `ReferenceIdentifier` composes state ID with feature type to avoid collisions.
-- `Feature.makeID(from:)` and `Feature` initializers enforce the identity rules.
-
-**Example**
-```swift
-struct UserFeature: FeatureBlueprint {
-    struct State: Identifiable, Equatable { let id: UUID; var name: String }
-    enum Action: Sendable { case rename(String) }
-    typealias Dependency = Void
-
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork { .done }
-}
-
-let user = Feature<UserFeature>(state: .init(id: UUID(), name: "A"), dependency: ())
-let id = user.id // combines UserFeature.self + state.id
-```
-
-## Goal 7: Testing harness without dependency mocking
-
-**Goal**
-Provide a test harness so consumers only need to provide values for async `Work` operations (no dependency mocks).
-
-**Alignment in code**
-- `Tester` runs feature logic with an in-memory state.
-- `WorkInspection` lets tests assert the kind of work and feed results back in.
-- `Work` includes a `TestPlan` in DEBUG/test runs for tasks and streams.
-
-**Example**
-```swift
-let tester = Tester<TodosFeature>(state: .init())
-
-let inspection = tester.send(.refresh) { state in
-    #expect(state.isLoading == true)
-}
-
-// Assert the Work and feed a simulated result
-inspection.assertRun()
-let next = try tester.feedResult(for: inspection, result: .success(["A", "B"])) { state in
-    #expect(state.todos == ["A", "B"])
-    #expect(state.isLoading == false)
-}
-
-// Continue with the resulting action if needed
-_ = tester.send(next)
-```
-
-## Goal 8: Preview helpers (TBD)
-
-**Goal**
-Provide a preview helper for `Feature` objects to simplify SwiftUI previews.
-
-**Current status**
-Planned but not implemented yet.
-
-## Appendix: Work patterns for cancellation & coordination
-
-**Cancellation and throttling**
 ```swift
 return .run { env in
     try await env.fetch()
 } map: { .response($0) }
 .cancellable(id: "fetch", cancelInFlight: true)
+.debounce(for: .milliseconds(250))
 .throttle(for: .seconds(1))
 ```
 
-**Merging or concatenating work**
 ```swift
 return .merge(
-    .run { env in try await env.fetchA() } map: { .a($0) },
-    .run { env in try await env.fetchB() } map: { .b($0) }
-)
-
-return .concatenate(
-    .run { env in try await env.step1() } map: { .step1($0) },
-    .run { env in try await env.step2() } map: { .step2($0) }
+    .run { env in try await env.fetchA() } map: { .loadedA($0) },
+    .run { env in try await env.fetchB() } map: { .loadedB($0) }
 )
 ```
+
+```swift
+return .concatenate(
+    .send(.step1Started),
+    .run { env in try await env.step1() } map: { .step1Finished($0) },
+    .run { env in try await env.step2() } map: { .step2Finished($0) }
+)
+```
+
+## Goal 5: Stable identity and reusable feature instances
+
+**Goal**
+Keep feature identity stable and enable reuse of live feature instances across modules.
+
+**Alignment in code**
+- `ReferenceIdentifier` is used as the feature identity key.
+- `Feature.makeID(from:)` combines `state.id` with feature type for identifiable states.
+- `Feature.makeID()` scopes identity to feature type for non-identifiable states.
+- `FeatureContainer` caches features in a weak-to-weak `NSMapTable`.
+
+**Example**
+```swift
+import Supervision
+import ValueObservation
+
+struct InboxFeature: FeatureBlueprint {
+    @ObservableValue
+    struct State: Identifiable, Equatable {
+        let id: String
+        var title = ""
+    }
+
+    enum Action: Sendable { case noop }
+    typealias Dependency = String
+
+    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+        .done
+    }
+}
+
+struct AppDependency {
+    let userID: String
+}
+
+let container = FeatureContainer(dependency: AppDependency(userID: "u1"))
+let featureA = container.feature(state: InboxFeature.State(id: "inbox")) { $0.userID }
+let featureB = container.feature(state: InboxFeature.State(id: "inbox")) { $0.userID }
+
+// Same identity, same cached instance while retained.
+let sameInstance = featureA === featureB
+```
+
+## Goal 6: SwiftUI bindings with explicit trade-offs
+
+**Goal**
+Support both architecture-first bindings and high-performance direct bindings.
+
+**Alignment in code**
+- `binding(_:send:animation:)` routes writes through actions (`send`) and `process`.
+- `directBinding(_:animation:)` mutates state directly for UI-only/performance-heavy cases.
+- Both binding APIs preserve SwiftUI transaction animation when available.
+
+**Example**
+```swift
+TextField(
+    "Username",
+    text: feature.binding(\.username, send: { .usernameChanged($0) })
+)
+
+Slider(
+    value: feature.directBinding(\.dragProgress, animation: .spring),
+    in: 0...1
+)
+```
+
+## Goal 7: Test harness for work-driven features
+
+**Goal**
+Test `process` + `Work` behavior without spinning up real async dependencies.
+
+**Alignment in code**
+- `Tester` runs feature logic with an in-memory state.
+- `WorkInspection` asserts operation shape (`assertDone`, `assertRun`, `assertMerge`, `assertConcatenate`, `assertCancel`).
+- `feedResult` drives task/stream `Work` by injecting test inputs into generated test plans.
+
+**Example**
+```swift
+let tester = Tester<MyFeature>(state: .init(id: UUID()))
+
+let loading = tester.send(.refresh) { state in
+    // assert state transitions
+}
+
+loading.assertRun()
+
+let done = try tester.feedResult(
+    for: loading,
+    result: .success(["A", "B"])
+) { state in
+    // assert final state
+}
+
+done.assertDone()
+```
+
+Note: the current public `Tester` initializer is available when `State: Identifiable`.
+
+## Goal 8: Actor-based broadcasting utility
+
+**Goal**
+Provide a lightweight actor for decoupled, asynchronous message broadcast.
+
+**Alignment in code**
+- `Broadcaster` manages subscribers as `AsyncStream` continuations keyed by `ReferenceIdentifier`.
+- `subscribe(id:)` returns a stream and auto-cleans terminated subscribers.
+- `broadcast(message:)` fan-outs messages to active subscribers.
+- `finish()` terminates all streams.
+
+**Example**
+```swift
+struct AppEvent: BroadcastMessage {
+    let date: Date
+    let title: String
+    let sender: ReferenceIdentifier?
+}
+
+let broadcaster = Broadcaster()
+let stream = await broadcaster.subscribe(id: feature.id)
+
+Task {
+    for await message in stream {
+        print(message.title)
+    }
+}
+
+await broadcaster.broadcast(
+    message: AppEvent(date: .now, title: "Refresh completed", sender: feature.id)
+)
+```
+
+## Current Gap
+
+There is no dedicated preview-only helper API in the current implementation. SwiftUI previews can use `Feature`, `FeatureContainer`, and `Shared` directly.
