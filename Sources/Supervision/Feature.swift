@@ -103,12 +103,15 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     }
 
     @inlinable
+    @inline(__always)
     public var state: State {
         _read {
             yield self._state
         }
     }
 
+    @inlinable
+    @inline(__always)
     public subscript<Value>(dynamicMember member: KeyPath<State, Value>) -> Value {
         state[keyPath: member]
     }

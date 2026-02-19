@@ -44,12 +44,6 @@ public final class FeatureContainer<Dependency> {
         features = .weakToWeakObjects()
     }
 
-    #if DEBUG
-        public var numberOffeatures: Int {
-            features.count
-        }
-    #endif
-
     private func getOrCreate<F: FeatureBlueprint>(
         id: ReferenceIdentifier,
         create: () -> Feature<F>

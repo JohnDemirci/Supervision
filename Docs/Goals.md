@@ -123,6 +123,7 @@ let name = feature[\.user.name]
 **Example: computed-property dependencies**
 ```swift
 struct NameFeature: FeatureBlueprint {
+    @ObservableValue
     struct State: Equatable {
         var first = ""
         var last = ""
@@ -131,10 +132,6 @@ struct NameFeature: FeatureBlueprint {
 
     enum Action: Sendable { case setFirst(String) }
     typealias Dependency = Void
-
-    var observationMap: ObservationMap {
-        [\State.full: [\State.first, \State.last]]
-    }
 
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
         if case .setFirst(let first) = action {

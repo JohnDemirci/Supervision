@@ -19,7 +19,10 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
     private var untracked: [UUID: Task<Void, Never>] = [:]
 
     private var lastExecutionTimes: [AnyHashableSendable: ContinuousClock.Instant] = [:]
-    private let logger = Logger(subsystem: "Supervision", category: "Worker<\(Action.self), \(Environment.self)>")
+    private let logger = Logger(
+        subsystem: "Supervision",
+        category: "Worker<\(Action.self), \(Environment.self)>"
+    )
 
     init() {
         tasks = [:]
@@ -145,7 +148,10 @@ extension Worker {
         environment: Environment,
         send: @escaping @Sendable (Action) async -> Void
     ) async {
-        guard !works.isEmpty else { return }
+        guard !works.isEmpty else {
+            // TODO: show runtime warning
+            return
+        }
 
         if works.count == 1 {
             await handle(work: works.first!, environment: environment, send: send)

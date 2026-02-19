@@ -1,13 +1,13 @@
 {
-  "originHash" : "72e4889f81245cc7f1e1b4fe3921de34dd712479e3b2979056578237e7e664d3",
+  "originHash" : "b6739a6a3521153f2c31cb5512712e339fb321bc682bc01560f372d008445e52",
   "pins" : [
     {
       "identity" : "swift-issue-reporting",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/swift-issue-reporting.git",
       "state" : {
-        "revision" : "34e463e98ab8541c604af706c99bed7160f5ec70",
-        "version" : "1.8.1"
+        "revision" : "dfd70507def84cb5fb821278448a262c6ff2bbad",
+        "version" : "1.9.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/JohnDemirci/ValueObservation.git",
       "state" : {
-        "revision" : "9186c3b5394183e517349d81ab76a429d9620603",
-        "version" : "1.0.2"
+        "revision" : "8876185091d4da0d3aa0b4ffd6c9983d348dde26",
+        "version" : "1.0.3"
       }
     }
   ],

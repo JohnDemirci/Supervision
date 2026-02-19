@@ -108,8 +108,6 @@ public struct Work<Output, Environment>: Sendable, Hashable {
     }
 }
 
-
-
 // MARK: - Work Instantiation
 
 extension Work {
