@@ -1,3 +1,6 @@
+# Currently under development 🚧
+Please wait for releases, though you are welcome look at the code and use it in your own pet projects.
+
 # Supervision
 
 Supervision is a lightweight feature architecture for Swift with:
