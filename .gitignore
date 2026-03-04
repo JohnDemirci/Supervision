@@ -11,3 +11,4 @@ DerivedData/
 buildServer.json.bak
 AGENTS.md
 /Docs
+.vscode/settings.json

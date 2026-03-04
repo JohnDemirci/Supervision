@@ -42,6 +42,7 @@ Then add the product to your target:
 
 ```swift
 import Supervision
+import ValueObservation
 
 struct CounterFeature: FeatureBlueprint {
     @ObservableValue

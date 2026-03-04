@@ -46,7 +46,7 @@ public final class FeatureContainer<Dependency> {
 
     private func getOrCreate<F: FeatureBlueprint>(
         id: ReferenceIdentifier,
-        create: () -> Feature<F>
+        create: @MainActor () -> Feature<F>
     ) -> Feature<F> {
         if let existing = features.object(forKey: id) {
             return unsafeDowncast(existing, to: Feature<F>.self)
@@ -74,7 +74,7 @@ extension FeatureContainer {
     ///    - ``Feature``: A `Feature<F>` bound to the provided state and dependency.
     public func feature<F: FeatureBlueprint>(
         state: F.State,
-        _ dependencyClosure: @Sendable @escaping (Dependency) -> F.Dependency
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
     ) -> Feature<F> where F.State: Identifiable {
         getOrCreate(id: Feature<F>.makeID(from: state.id)) {
             Feature<F>(state: state, dependency: dependencyClosure(dependency))
@@ -104,7 +104,7 @@ extension FeatureContainer {
     public func feature<F: FeatureBlueprint>(
         type _: F.Type = F.self,
         state: F.State,
-        _ dependencyClosure: @Sendable @escaping (Dependency) -> F.Dependency
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
     ) -> Feature<F> {
         getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))) {
             Feature<F>(state: state, dependency: dependencyClosure(dependency))

@@ -43,17 +43,62 @@ public final class Feature<F: FeatureBlueprint>: Observable {
 
     private let actionContinuation: AsyncStream<F.FeatureWork>.Continuation
     private let actionStream: AsyncStream<F.FeatureWork>
-    private let dependency: Dependency
+    private let dependency: Dependency!
     private let worker: Worker<Action, Dependency>
 
     private nonisolated let logger: Logger
 
     private var processingTask: Task<Void, Never>?
 
+    #if DEBUG
+    var previewActionMapper: ((Action) -> Action?)?
+    #endif
+
     @usableFromInline
+    @inline(__always)
     internal var _state: State
 
     // MARK: - Initialization
+
+    #if DEBUG
+    fileprivate init(
+        id: ReferenceIdentifier,
+        state: State
+    ) {
+        self.dependency = nil
+        self.worker = Worker()
+        self.feature = F()
+        self.id = id
+        self.logger = .init(subsystem: "com.Supervision.\(F.self)", category: "Feature.\(id)")
+        self._state = state
+
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: F.FeatureWork.self,
+            bufferingPolicy: .unbounded
+        )
+
+        self.actionStream = stream
+        self.actionContinuation = continuation
+
+        self.processingTask = Task { [weak self] in
+            for await work in stream {
+                guard let self else { return }
+                await self.processAsyncWork(work)
+            }
+        }
+
+        let mirror = Mirror(reflecting: state)
+        if mirror.displayStyle != .struct {
+            logger.error(
+                """
+                Warning: State should be a struct (value type).
+                Using reference types (classes) can lead to unexpected behavior.
+                Current State type: \(type(of: state))
+                """
+            )
+        }
+    }
+    #endif
 
     init(
         id: ReferenceIdentifier,
@@ -119,8 +164,8 @@ public final class Feature<F: FeatureBlueprint>: Observable {
 
 // MARK: - Convenience Initializers
 
-public extension Feature where State: Identifiable {
-    convenience init(
+extension Feature where State: Identifiable {
+    public convenience init(
         state: State,
         dependency: Dependency
     ) {
@@ -131,7 +176,7 @@ public extension Feature where State: Identifiable {
         )
     }
 
-    convenience init(
+    public convenience init(
         state: State
     ) where Dependency == Void {
         self.init(
@@ -140,10 +185,16 @@ public extension Feature where State: Identifiable {
             dependency: ()
         )
     }
+
+    #if DEBUG
+    internal convenience init(state: State) {
+        self.init(id: Self.makeID(from: state.id), state: state)
+    }
+    #endif
 }
 
-public extension Feature {
-    convenience init(
+extension Feature {
+    public convenience init(
         state: State,
         dependency: Dependency
     ) {
@@ -154,7 +205,7 @@ public extension Feature {
         )
     }
 
-    convenience init(
+    public convenience init(
         state: State
     ) where Dependency == Void {
         self.init(
@@ -163,6 +214,15 @@ public extension Feature {
             dependency: ()
         )
     }
+
+    #if DEBUG
+    internal convenience init(state: State) {
+        self.init(
+            id: Self.makeID(),
+            state: state
+        )
+    }
+    #endif
 }
 
 extension Feature {
@@ -171,6 +231,13 @@ extension Feature {
     /// - Parameters:
     ///    - action: Action to be performed
     public func send(_ action: Action) {
+        #if DEBUG
+        if let previewActionMapper = previewActionMapper, let mappedAction = previewActionMapper(action) {
+            send(mappedAction)
+            return
+        }
+        #endif
+
         let work: F.FeatureWork = withUnsafeMutablePointer(
             to: &_state
         ) { [self] pointer in
@@ -187,7 +254,7 @@ extension Feature {
 
         // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
         if case .cancel = work.operation {
-            Task { await worker.handle(work: work, environment: self.dependency, send: { _ in }) }
+            Task { await worker.handle(work: work, environment: dependency, send: { _ in }) }
             return
         }
 
@@ -210,11 +277,13 @@ extension Feature {
 // MARK: - Feature + Direct Binding
 
 extension Feature {
+    @usableFromInline
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
         _state[keyPath: keyPath] = value
     }
 
     @discardableResult
+    @usableFromInline
     func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
         let currentValue = _state[keyPath: keyPath]
         guard currentValue != value else { return false }
@@ -234,3 +303,28 @@ extension Feature {
         ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))
     }
 }
+
+extension Feature: @MainActor Equatable {
+    public static func == (lhs: Feature<F>, rhs: Feature<F>) -> Bool {
+        lhs === rhs
+    }
+}
+
+extension Feature: @MainActor Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
+    }
+}
+
+#if DEBUG
+extension Feature {
+    public static func makePreview(
+        state: State,
+        previewActionMapper: ((Action) -> Action?)?
+    ) -> Self {
+        let feature = Self(state: state)
+        feature.previewActionMapper = previewActionMapper
+        return feature
+    }
+}
+#endif

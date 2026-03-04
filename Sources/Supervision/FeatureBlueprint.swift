@@ -70,7 +70,7 @@ public protocol FeatureBlueprint: Sendable {
     typealias FeatureWork = Work<Action, Dependency>
 
     /// Source of truth for the Feature's state
-    associatedtype State: Equatable, ObservableValue
+    associatedtype State: ObservableValue
 
     /// Actions that are dispatched, or a result of users' interactions
     associatedtype Action: Sendable
