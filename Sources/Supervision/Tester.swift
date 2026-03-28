@@ -139,6 +139,17 @@ extension Tester where State: Identifiable {
     }
 }
 
+extension Tester {
+    public convenience init(
+        state: State
+    ) {
+        self.init(
+            state: state,
+            id: Feature<F>.makeID()
+        )
+    }
+}
+
 // MARK: - WorkInspection
 
 @MainActor
