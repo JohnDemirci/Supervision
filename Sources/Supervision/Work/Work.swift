@@ -66,13 +66,13 @@ public struct Work<Output, Environment>: Sendable, Hashable {
     /// A Work operation that represents an outside work to be performed.
     public struct Run: Hashable, Sendable {
         let configuration: RunConfiguration
-        let execute: ExecutionContext
-        let testPlan: TestPlan?
+        let execute: ExecutionContext<Output, Environment>
+        let testPlan: TestPlan<Output>?
 
         init(
             configuration: RunConfiguration = .init(),
-            execute: ExecutionContext,
-            testPlan: TestPlan? = nil
+            execute: ExecutionContext<Output, Environment>,
+            testPlan: TestPlan<Output>? = nil
         ) {
             self.configuration = configuration
             self.execute = execute
@@ -148,7 +148,7 @@ extension Work {
                         catch is CancellationError { return }
                         catch { await send(map(.failure(error))) }
                     },
-                    testPlan: isTesting ? TestPlan(
+                    testPlan: isTesting ? TestPlan<Output>(
                         kind: .task,
                         expectedInputType: Result<Value, Error>.self,
                         isContinuous: false,
@@ -448,6 +448,37 @@ extension Work {
             )
         }
     }
+
+    /// Transforms each output into a new work and flattens it into a single work.
+    ///
+    /// - Parameters:
+    ///    - transform: Closure that takes output and returns a new work.
+    ///
+    /// - Returns: A new flattened Work<NewOutput, Environment>.
+    public func flatMap<NewOutput>(
+        _ transform: @escaping @Sendable (Output) -> Work<NewOutput, Environment>
+    ) -> Work<NewOutput, Environment> where Environment: Sendable {
+        switch operation {
+        case .done:
+            return .done
+        case .cancel(let id):
+            return .cancel(id)
+        case .merge(let works):
+            return Work<NewOutput, Environment>.merge(
+                Work.flatMap(from: works, transform: transform)
+            )
+        case .concatenate(let works):
+            return Work<NewOutput, Environment>.concatenate(
+                Work.flatMap(from: works, transform: transform)
+            )
+        case .run(let run):
+            return Work<NewOutput, Environment>(
+                operation: .run(
+                    Run.flatMap(from: run, transform: transform)
+                )
+            )
+        }
+    }
 }
 
 extension Work where Output: Sendable {
@@ -488,6 +519,40 @@ private extension Work {
             }
         }
     }
+
+    static func flatMap<OldOutput, NewOutput>(
+        from olderWorks: [Work<OldOutput, Environment>],
+        transform: @Sendable @escaping (OldOutput) -> Work<NewOutput, Environment>
+    ) -> [Work<NewOutput, Environment>] where Environment: Sendable {
+        olderWorks.map { olderWork in
+            olderWork.flatMap(transform)
+        }
+    }
+
+    func perform(
+        environment: Environment,
+        send: @escaping @Sendable (Output) async -> Void
+    ) async where Environment: Sendable {
+        switch operation {
+        case .done, .cancel:
+            return
+        case .run(let run):
+            await run.execute.execution(environment, send)
+        case .merge(let works):
+            await withTaskGroup(of: Void.self) { group in
+                for work in works {
+                    group.addTask {
+                        await work.perform(environment: environment, send: send)
+                    }
+                }
+                await group.waitForAll()
+            }
+        case .concatenate(let works):
+            for work in works {
+                await work.perform(environment: environment, send: send)
+            }
+        }
+    }
     
     func modifyRun(_ transform: (Run) -> Run) -> Self {
         return switch operation {
@@ -522,14 +587,14 @@ private extension Work.Run {
                 throttle: run.configuration.throttle,
                 priority: run.configuration.priority
             ),
-            execute: Work<NewOutput, Environment>.ExecutionContext { env, send in
-                await run.execute(env) { output in
+            execute: ExecutionContext<NewOutput, Environment> { env, send in
+                await run.execute.execution(env) { output in
                     await send(transform(output))
                 }
             },
             testPlan: run.testPlan.map { currentPlan in
-                Work<NewOutput, Environment>.TestPlan(
-                    kind: Work<NewOutput, Environment>.TestPlan.Kind(rawValue: currentPlan.kind.rawValue)!,
+                TestPlan<NewOutput>(
+                    kind: TestPlan<NewOutput>.Kind(rawValue: currentPlan.kind.rawValue)!,
                     expectedInputType: currentPlan.expectedInputType,
                     isContinuous: currentPlan.isContinuous,
                     feed: { input in
@@ -537,6 +602,31 @@ private extension Work.Run {
                     }
                 )
             }
+        )
+    }
+
+    static func flatMap<OldOutput, NewOutput>(
+        from run: Work<OldOutput, Environment>.Run,
+        transform: @Sendable @escaping (OldOutput) -> Work<NewOutput, Environment>
+    ) -> Work<NewOutput, Environment>.Run where Environment: Sendable {
+        Work<NewOutput,Environment>.Run(
+            configuration: Work<NewOutput,
+            Environment>.RunConfiguration(
+                name: run.configuration.name,
+                cancellationID: run.configuration.cancellationID,
+                cancelInFlight: run.configuration.cancelInFlight,
+                fireAndForget: run.configuration.fireAndForget,
+                debounce: run.configuration.debounce,
+                throttle: run.configuration.throttle,
+                priority: run.configuration.priority
+            ),
+            execute: ExecutionContext<NewOutput, Environment> { env, send in
+                await run.execute.execution(env) { output in
+                    let mapped = transform(output)
+                    await mapped.perform(environment: env, send: send)
+                }
+            },
+            testPlan: nil
         )
     }
 }

@@ -106,7 +106,7 @@ extension Worker {
                     guard !Task.isCancelled else { return }
                 }
 
-                await run.execute(environment, send)
+                await run.execute.execution(environment, send)
             }
         )
     }

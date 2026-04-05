@@ -9,67 +9,59 @@ import Foundation
 
 // MARK: - Test Plan
 
-extension Work {
-    struct TestPlan: @unchecked Sendable {
-        enum Kind: Hashable, Sendable, RawRepresentable {
-            case task
-            case stream
+struct TestPlan<Action>: @unchecked Sendable {
+    enum Kind: Hashable, Sendable, RawRepresentable {
+        case task
+        case stream
 
-            typealias RawValue = String
+        typealias RawValue = String
 
-            init?(rawValue: String) {
-                if rawValue == "task" {
-                    self = .task
-                } else if rawValue == "stream" {
-                    self = .stream
-                } else {
-                    return nil
-                }
-            }
-
-            var rawValue: String {
-                switch self {
-                case .task: "task"
-                case .stream: "stream"
-                }
+        init?(rawValue: String) {
+            if rawValue == "task" {
+                self = .task
+            } else if rawValue == "stream" {
+                self = .stream
+            } else {
+                return nil
             }
         }
 
-        let kind: Kind
-        let expectedInputType: Any.Type
-        let isContinuous: Bool
-        let feed: @Sendable (TestInput) -> [Output]
+        var rawValue: String {
+            switch self {
+            case .task: "task"
+            case .stream: "stream"
+            }
+        }
     }
+
+    let kind: Kind
+    let expectedInputType: Any.Type
+    let isContinuous: Bool
+    let feed: @Sendable (TestInput) -> [Action]
 }
 
 // MARK: - Execution Context
 
-extension Work {
-    struct ExecutionContext: Hashable, Sendable {
-        let id: UUID
-        let execution: @Sendable (Environment, @escaping @Sendable (Output) async -> Void) async -> Void
+struct ExecutionContext<Action, Dependency>: Hashable, Sendable {
+    let id: UUID
+    let execution: @Sendable (Dependency, @escaping @Sendable (Action) async -> Void) async -> Void
 
-        init(
-            execution: @Sendable @escaping (Environment, @Sendable @escaping (Output) async -> Void) async -> Void
-        ) {
-            self.id = UUID()
-            self.execution = execution
-        }
+    init(
+        execution: @Sendable @escaping (Dependency, @Sendable @escaping (Action) async -> Void) async -> Void
+    ) {
+        self.id = UUID()
+        self.execution = execution
+    }
 
-        func callAsFunction(
-            _ environment: Environment,
-            _ completion: @escaping @Sendable (Output) async -> Void
-        ) async {
-            await execution(environment, completion)
-        }
+    static func == (
+        lhs: ExecutionContext<Action, Dependency>,
+        rhs: ExecutionContext<Action, Dependency>
+    ) -> Bool {
+        lhs.id == rhs.id
+    }
 
-        static func == (lhs: Work<Output, Environment>.ExecutionContext, rhs: Work<Output, Environment>.ExecutionContext) -> Bool {
-            lhs.id == rhs.id
-        }
-
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
 
