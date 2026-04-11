@@ -73,6 +73,7 @@ extension Work.RunConfiguration {
         cancellationID: AnyHashableSendable?? = nil,
         cancelInFlight: Bool? = nil,
         fireAndForget: Bool? = nil,
+        isSubscription: Bool? = nil,
         debounce: Duration?? = nil,
         throttle: Duration?? = nil,
         priority: TaskPriority?? = nil
@@ -82,6 +83,7 @@ extension Work.RunConfiguration {
             cancellationID: cancellationID ?? self.cancellationID,
             cancelInFlight: cancelInFlight ?? self.cancelInFlight,
             fireAndForget: fireAndForget ?? self.fireAndForget,
+            isSubscription: isSubscription ?? self.isSubscription,
             debounce: debounce ?? self.debounce,
             throttle: throttle ?? self.throttle,
             priority: priority ?? self.priority

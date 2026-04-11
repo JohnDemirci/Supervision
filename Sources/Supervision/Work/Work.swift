@@ -44,11 +44,14 @@ public struct Work<Output, Environment>: Sendable, Hashable {
         
         public let fireAndForget: Bool
 
+        public let isSubscription: Bool
+
         public init(
             name: String? = nil,
             cancellationID: AnyHashableSendable? = nil,
             cancelInFlight: Bool = false,
             fireAndForget: Bool = false,
+            isSubscription: Bool = false,
             debounce: Duration? = nil,
             throttle: Duration? = nil,
             priority: TaskPriority? = nil
@@ -58,6 +61,7 @@ public struct Work<Output, Environment>: Sendable, Hashable {
             self.cancelInFlight = cancelInFlight
             self.debounce = debounce
             self.throttle = throttle
+            self.isSubscription = isSubscription
             self.priority = priority
             self.fireAndForget = fireAndForget
         }
@@ -186,7 +190,7 @@ extension Work {
         return Work(
             operation: .run(
                 Run(
-                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true),
+                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true, isSubscription: true),
                     execute: ExecutionContext { env, send in
                         do {
                             let sequence = try await stream(env)
@@ -237,7 +241,7 @@ extension Work {
         Work(
             operation: .run(
                 Run(
-                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true),
+                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true, isSubscription: false),
                     execute: ExecutionContext { env, _ in
                         do { try await body(env) }
                         catch { return }
@@ -675,3 +679,4 @@ extension Work.Operation {
 // MARK: - TaskPriority Hashable Conformance
 
 extension TaskPriority: @retroactive Hashable {}
+

@@ -293,13 +293,13 @@ extension Feature {
 }
 
 extension Feature where State: Identifiable {
-    static func makeID(from id: State.ID) -> ReferenceIdentifier {
+    nonisolated static func makeID(from id: State.ID) -> ReferenceIdentifier {
         ReferenceIdentifier(id, ObjectIdentifier(F.self))
     }
 }
 
 extension Feature {
-    static func makeID() -> ReferenceIdentifier {
+    nonisolated static func makeID() -> ReferenceIdentifier {
         ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))
     }
 }
