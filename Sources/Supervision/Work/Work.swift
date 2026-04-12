@@ -365,7 +365,7 @@ extension Work {
     ) -> Self {
         switch self.operation {
         case .merge, .concatenate:
-            assertionFailure("cannot have a singular ID when merging or concatenating works")
+            reportIssue("cannot have a singular ID when merging or concatenating works")
             return self
         default:
             break

@@ -21,12 +21,20 @@ public protocol Inspection<Action, Environment>: AnyObject, Identifiable {
 protocol _Inspection<Action, Environment>: Inspection {
     associatedtype Event = Void
 
+    var toBeForgotten: Bool  { get set }
     var sendEvent: (Event) -> Void { get }
 }
 
 extension _Inspection where Event == Void {
     var sendEvent: (Event) -> Void {
         { _ in }
+    }
+}
+
+extension _Inspection {
+    var toBeForgotten: Bool {
+        get { false }
+        set {  }
     }
 }
 
@@ -52,22 +60,36 @@ extension Inspection {
         file: StaticString = #file,
         line: UInt = #line
     ) -> CancelInspection<Action, Environment> {
-        assertConcrete(
+        let inspection = assertConcrete(
             scope: .cancel,
+            as: CancelInspection<Action, Environment>.self,
             file: file,
             line: line
         )
+
+        inspection.startCancellation()
+
+        return inspection
     }
 
     public func assertRun(
         file: StaticString = #file,
         line: UInt = #line
     ) -> RunInspection<Action, Environment> {
-        assertConcrete(
+        let inspection = assertConcrete(
             scope: .run,
+            as: RunInspection<Action, Environment>.self,
             file: file,
             line: line
         )
+
+        if !inspection.isSubscription {
+            if inspection.config.fireAndForget {
+                inspection.toBeForgotten = true
+            }
+        }
+
+        return inspection
     }
 
     public func assertMerge(
@@ -116,6 +138,13 @@ extension Inspection {
     }
 }
 
+extension Inspection {
+    public func forget() {
+        let current = self as! (any _Inspection<Action, Environment>)
+        current.toBeForgotten = true
+    }
+}
+
 enum InspectionStatus {
     case pending
     case finished
@@ -127,4 +156,5 @@ public enum InspectionScope {
     case run
     case merge
     case concatenate
+    case subscription
 }

@@ -14,13 +14,18 @@ final class TestWorker<Action, Environment> {
         case doneInspectionEvent(DoneInspection<Action, Environment>.Event)
         case cancelInspectionEvent(CancelInspection<Action, Environment>.Event)
         case runInspectionEvent(RunInspection<Action, Environment>.Event)
+        case concatenateInspectionEvent(ConcatenateInspection<Action, Environment>.Event)
+        case mergeInspectionEvent(MergeInspection<Action, Environment>.Event)
     }
 
     private var queue: [any Inspection<Action, Environment>] = []
-    private let subject = PassthroughSubject<Action, Never>()
+    private var subscriptionQueue: [RunInspection<Action, Environment>] = []
 
-    var publisher: AnyPublisher<Action, Never> {
-        subject.eraseToAnyPublisher()
+    deinit {
+        guard queue.isEmpty else {
+            reportIssue("queue is not empty on deinit: \(queue)")
+            return
+        }
     }
 
     @discardableResult
@@ -34,18 +39,62 @@ final class TestWorker<Action, Environment> {
             CancelInspection(work: work) { [weak self] event in
                 self?.handleAction(.cancelInspectionEvent(event))
             }
-        case .run:
+        case .run(let run):
             RunInspection(work: work) { [weak self] event in
                 self?.handleAction(.runInspectionEvent(event))
             }
         case .merge:
-            MergeInspection(work: work)
+            MergeInspection(work: work) { [weak self] event in
+                self?.handleAction(.mergeInspectionEvent(event))
+            }
         case .concatenate:
-            ConcatenateInspection(work: work)
+            ConcatenateInspection(work: work) { [weak self] event in
+                self?.handleAction(.concatenateInspectionEvent(event))
+            }
         }
 
-        self.queue.append(inspection)
+        let existingInspectionIndex = self.queue.firstIndex {
+            $0.id == inspection.id
+        }
 
+        let existingSubscriptionIndex = self.queue.firstIndex {
+            $0.id == inspection.id
+        }
+
+        if let existingInspectionIndex {
+            if let existingInspection = queue[existingInspectionIndex] as? RunInspection<Action, Environment> {
+                if existingInspection.cancelInFlight {
+                    queue.remove(at: existingInspectionIndex)
+                } else {
+                    return existingInspection
+                }
+            }
+        }
+
+        if let existingSubscriptionIndex {
+            if let existingInspection = queue[existingSubscriptionIndex] as? RunInspection<Action, Environment> {
+                if existingInspection.cancelInFlight {
+                    subscriptionQueue.remove(at: existingSubscriptionIndex)
+                } else {
+                    return existingInspection
+                }
+            }
+        }
+
+        if case .run = inspection.scope {
+            guard let x = inspection as? RunInspection<Action, Environment> else {
+                fatalError()
+            }
+
+            if x.isSubscription {
+                subscriptionQueue.append(x)
+                return inspection
+            } else if x.config.fireAndForget {
+                return inspection
+            }
+        }
+
+        queue.append(inspection)
         return inspection
     }
 
@@ -59,6 +108,12 @@ final class TestWorker<Action, Environment> {
 
         case .runInspectionEvent(let event):
             handleRunInspectionEvent(event)
+
+        case .concatenateInspectionEvent(let event):
+            handleConcatenateInspectionEvent(event)
+
+        case .mergeInspectionEvent(let event):
+            handleMergeInspectionEvent(event)
         }
     }
 
@@ -67,6 +122,13 @@ final class TestWorker<Action, Environment> {
         for inspection: RunInspection<Action, Environment>
     ) -> Action {
         inspection.feedResult(result)
+    }
+
+    func feedValue<V>(
+        _ value: V,
+        for inspection: RunInspection<Action, Environment>
+    ) -> Action {
+        inspection.feedValue(value)
     }
 }
 
@@ -86,62 +148,98 @@ private extension TestWorker {
     func handleCancelInspectionEvent(_ event: CancelInspection<Action, Environment>.Event) {
         switch event {
         case .cancellationStarted(canceler: let cancellerID, cancellee: let cancelleeID):
-            let inspection = queue.removeLast()
-                .assertCancel()
+            let inspection = queue.removeLast() as? CancelInspection<Action, Environment>
 
-            guard inspection.id == cancellerID else {
+            guard inspection?.id == cancellerID else {
                 reportIssue()
                 return
             }
 
-            let index = queue.firstIndex { $0.id == cancelleeID }
+            var didFound = false
 
-            guard let index else { return }
+            for (index, inspection) in queue.enumerated() {
+                switch inspection.work.operation {
+                case .done, .cancel:
+                    continue
+                case .run:
+                    if inspection.id == cancelleeID {
+                        didFound = true
 
-            switch queue[index].scope {
-            case .run:
-                let runInspection = queue[index].assertRun()
-                runInspection.didComplete = true
-                queue.remove(at: index)
-            case .concatenate:
-                let concatenateInspection = queue[index].assertConcatenate()
-            case .merge:
-                let mergeInspection = queue[index].assertMerge()
-            default:
-                fatalError("unexpected scope")
+                        let x = inspection.assertRun()
+                        x.didComplete = true
+                        break
+                    }
+                case .concatenate:
+                    let concreteInspection = inspection.assertConcatenate()
+
+                    let childIndex = concreteInspection.childInspections.firstIndex {
+                        $0.id == cancelleeID
+                    }
+
+                    guard childIndex != nil else { continue }
+
+                    didFound = true
+
+                    for childInspection in concreteInspection.childInspections {
+                        childInspection.didComplete = true
+                    }
+
+                    concreteInspection.childInspections.removeAll()
+                    break
+
+                case .merge:
+                    let concreteInspection = inspection.assertMerge()
+
+                    let childIndex = concreteInspection.childInspections.firstIndex {
+                        $0.id == cancelleeID
+                    }
+
+                    guard childIndex != nil else { continue }
+
+                    didFound = true
+
+                    for childInspection in concreteInspection.childInspections {
+                        childInspection.didComplete = true
+                    }
+
+                    concreteInspection.childInspections.removeAll()
+                }
+            }
+            if !didFound {
+                for (index, inspection) in subscriptionQueue.enumerated() {
+                    if inspection.id == cancelleeID {
+                        didFound = true
+                        inspection.didComplete = true
+                        break
+                    }
+                }
+            }
+
+            guard didFound else {
+                reportIssue("Could not find the target inspection to cancel")
+                return
             }
         }
     }
 
     func handleRunInspectionEvent(_ event: RunInspection<Action, Environment>.Event) {
         switch event {
-        case .didFeed(let id, let action):
-            subject.send(action)
+        case .didComplete(let id):
+            queue.removeAll { $0.id == id }
+        }
+    }
+
+    func handleConcatenateInspectionEvent(_ event: ConcatenateInspection<Action, Environment>.Event) {
+        switch event {
+        case .didComplete(let id):
+            queue.removeAll { $0.id == id }
+        }
+    }
+
+    func handleMergeInspectionEvent(_ event: MergeInspection<Action, Environment>.Event) {
+        switch event {
+        case .didComplete(let id):
+            queue.removeAll { $0.id == id }
         }
     }
 }
-
-public final class ConcatenateInspection<Action, Environment>: _Inspection {
-    public typealias Action = Action
-    public typealias Environment = Environment
-
-    public let work: InspectedWork
-    public var scope: InspectionScope { .concatenate }
-
-    init(work: InspectedWork) {
-        self.work = work
-    }
-}
-
-public final class MergeInspection<Action, Environment>: _Inspection {
-    public typealias Action = Action
-    public typealias Environment = Environment
-
-    public let work: InspectedWork
-    public var scope: InspectionScope { .merge }
-
-    init(work: InspectedWork) {
-        self.work = work
-    }
-}
-

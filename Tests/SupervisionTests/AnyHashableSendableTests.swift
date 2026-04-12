@@ -21,7 +21,6 @@ struct AnyHashableSendableTests {
     @Test
     func example() async {
         let one = AnyHashableSendable(value: 1)
-
         #expect(AnyHashableSendable(value: 1) == one)
     }
 

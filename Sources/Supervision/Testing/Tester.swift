@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 
 public final class Tester<Blueprint: FeatureBlueprint> {
     public typealias Action = Blueprint.Action
@@ -17,12 +16,12 @@ public final class Tester<Blueprint: FeatureBlueprint> {
     private var _state: State
 
     public let id: ReferenceIdentifier
+
     public var state: State {
         _read { yield _state }
     }
 
     let worker: TestWorker<Action, Environment>
-    var cancellable: AnyCancellable?
 
     init(_state: State, id: ReferenceIdentifier) {
         self._state = _state
@@ -33,7 +32,7 @@ public final class Tester<Blueprint: FeatureBlueprint> {
 }
 
 extension Tester {
-    func send(
+    public func send(
         _ action: Action,
         assertion: ((State) -> Void)? = nil
     ) -> any Inspection<Action, Environment> {
@@ -50,20 +49,29 @@ extension Tester {
         }
 
         assertion?(_state)
-
         let inspection = worker.register(work)
-
         return inspection
     }
 
     @discardableResult
-    func feedResult<V>(
+    public func feedResult<V>(
         _ result: Result<V, Error>,
         inspection: RunInspection<Action, Environment>,
         assertion: ((State) -> Void)? = nil
     ) -> any Inspection<Action, Environment> {
         send(
             worker.feedResult(result, for: inspection),
+            assertion: assertion
+        )
+    }
+
+    public func feedValue<V>(
+        _ value: V,
+        inspection: RunInspection<Action, Environment>,
+        assertion: ((State) -> Void)? = nil
+    ) -> any Inspection<Action, Environment> {
+        send(
+            worker.feedValue(value, for: inspection),
             assertion: assertion
         )
     }

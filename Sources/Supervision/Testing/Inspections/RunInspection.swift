@@ -30,12 +30,25 @@ public final class RunInspection<Action, Environment>: _Inspection {
     let testPlan: TestPlan<Action>
     let sendEvent: (Event) -> Void
 
-    var didComplete: Bool = false
+    var didComplete: Bool = false {
+        didSet {
+            if didComplete { sendEvent(.didComplete(id)) }
+        }
+    }
+
+    var toBeForgotten: Bool {
+        didSet {
+            if toBeForgotten {
+                didComplete = true
+            }
+        }
+    }
 
     init(work: InspectedWork, sendEvent: @escaping (Event) -> Void) {
         self.work = work
         var _id = AnyHashableSendable(value: UUID())
         self.sendEvent = sendEvent
+        self.toBeForgotten = false
 
         guard case .run(let run) = work.operation else {
             fatalError()
@@ -56,19 +69,32 @@ public final class RunInspection<Action, Environment>: _Inspection {
     }
 
     deinit {
-        guard didComplete else {
-            reportIssue("deinitialized withut completing")
-            return
+        if !isSubscription {
+            guard didComplete else {
+                reportIssue("deinitialized withut completing")
+                return
+            }
         }
     }
 
     func feedResult<V>(_ result: Result<V, Error>) -> Action {
+        guard testPlan.kind == .task else {
+            fatalError()
+        }
+
         let actions = testPlan.feed(.taskResult(result))
         guard let action = actions.first else { fatalError() }
-
-        defer { sendEvent(.didComplete(id)) }
-
         didComplete = true
+        return action
+    }
+
+    func feedValue<V>(_ value: V) -> Action {
+        guard testPlan.kind == .stream else {
+            fatalError()
+        }
+
+        let actions = testPlan.feed(.streamValues([value]))
+        guard let action = actions.first else { fatalError() }
         return action
     }
 }
