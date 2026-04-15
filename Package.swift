@@ -32,6 +32,10 @@ let package = Package(
                 .product(name: "IssueReporting", package: "swift-issue-reporting"),
                 .product(name: "ValueObservation", package: "ValueObservation"),
             ],
+            swiftSettings: [
+                .enableExperimentalFeature("LifetimeDependence"),
+                .enableExperimentalFeature("Lifetimes"),
+            ],
         ),
         .testTarget(
             name: "SupervisionTests",

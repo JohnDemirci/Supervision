@@ -76,8 +76,8 @@ extension Worker {
         environment: Environment,
         send: @escaping @Sendable (Action) async -> Void,
     ) async -> Bool {
-        guard handleCancelInFlight(run: run) else { return false }
         guard handleThrottle(run: run) else { return true }
+        guard handleCancelInFlight(run: run) else { return false }
 
         let task = makeTask(run: run, environment: environment, send: send)
         let registration = register(task: task, cancellationID: run.configuration.cancellationID)
@@ -100,11 +100,14 @@ extension Worker {
         Task<Void, Never>(
             name: run.configuration.name,
             priority: run.configuration.priority,
-            operation: {
+            operation: { [self] in
                 if let debounce = run.configuration.debounce {
                     try? await Task.sleep(for: debounce)
                     guard !Task.isCancelled else { return }
                 }
+
+                recordExecutionStart(for: run)
+                guard !Task.isCancelled else { return }
 
                 await run.execute.execution(environment, send)
             }
@@ -254,15 +257,13 @@ extension Worker {
     ) -> Bool {
         if let throttle = run.configuration.throttle {
             if let id = run.configuration.cancellationID {
-                let now = ContinuousClock.now
                 if let lastTime = lastExecutionTimes[id] {
-                    let elapsed = now - lastTime
+                    let elapsed = ContinuousClock.now - lastTime
                     if elapsed < throttle {
                         logger.debug("Throttled effect \(id)")
                         return false
                     }
                 }
-                lastExecutionTimes[id] = now
             }
         } else if let id = run.configuration.cancellationID {
             // if you do not provide a throtle for a given id, the throttle is reset.
@@ -271,5 +272,17 @@ extension Worker {
         }
 
         return true
+    }
+
+    @inline(__always)
+    private func recordExecutionStart(
+        for run: Work<Action, Environment>.Run
+    ) {
+        guard
+            run.configuration.throttle != nil,
+            let id = run.configuration.cancellationID
+        else { return }
+
+        lastExecutionTimes[id] = ContinuousClock.now
     }
 }

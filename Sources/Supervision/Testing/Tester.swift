@@ -38,9 +38,6 @@ extension Tester {
     ) -> any Inspection<Action, Environment> {
         let work = withUnsafeMutablePointer(to: &_state) { [self] pointer in
             let context = Context<State>(
-                mutateFn: { mutation in
-                    mutation.apply(&pointer.pointee)
-                },
                 statePointer: pointer,
                 id: id
             )

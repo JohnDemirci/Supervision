@@ -10,16 +10,15 @@ import IssueReporting
 
 public final class MergeInspection<Action, Environment>: _Inspection {
     public typealias ChildInspection = RunInspection<Action, Environment>
+    public typealias Action = Action
+    public typealias Environment = Environment
 
     enum Event {
         case didComplete(AnyHashableSendable)
     }
 
-    public typealias Action = Action
-    public typealias Environment = Environment
-
     public let work: InspectedWork
-    public var scope: InspectionScope { .concatenate }
+    public var scope: InspectionScope { .merge }
     public let id: AnyHashableSendable
 
     var childInspections: [RunInspection<Action, Environment>] {
@@ -52,7 +51,7 @@ public final class MergeInspection<Action, Environment>: _Inspection {
         self.sendEvent = sendEvent
         self.toBeForgotten = false
 
-        guard case .concatenate(let children) = work.operation else {
+        guard case .merge(let children) = work.operation else {
             fatalError()
         }
 

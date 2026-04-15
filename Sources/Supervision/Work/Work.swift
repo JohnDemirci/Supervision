@@ -201,6 +201,7 @@ extension Work {
                             return
                         } catch {
                             await send(map(.failure(error)))
+                            return
                         }
                     },
                     testPlan: isTesting ? TestPlan(

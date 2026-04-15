@@ -158,7 +158,7 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     @inlinable
     @inline(__always)
     public subscript<Value>(dynamicMember member: KeyPath<State, Value>) -> Value {
-        state[keyPath: member]
+        _read { yield state[keyPath: member] }
     }
 }
 
@@ -187,8 +187,8 @@ extension Feature where State: Identifiable {
     }
 
     #if DEBUG
-    internal convenience init(state: State) {
-        self.init(id: Self.makeID(from: state.id), state: state)
+    internal convenience init(previewState: State) {
+        self.init(id: Self.makeID(from: previewState.id), state: previewState)
     }
     #endif
 }
@@ -216,10 +216,10 @@ extension Feature {
     }
 
     #if DEBUG
-    internal convenience init(state: State) {
+    internal convenience init(previewState: State) {
         self.init(
             id: Self.makeID(),
-            state: state
+            state: previewState
         )
     }
     #endif
@@ -238,18 +238,14 @@ extension Feature {
         }
         #endif
 
-        let work: F.FeatureWork = withUnsafeMutablePointer(
-            to: &_state
-        ) { [self] pointer in
-            let context = Context<F.State>(
-                mutateFn: { @MainActor mutation in
-                    mutation.apply(&pointer.pointee)
-                },
-                statePointer: UnsafePointer(pointer),
-                id: id
+        let work: F.FeatureWork = withUnsafeMutablePointer(to: &_state) { [feature] pointer in
+            feature.process(
+                action: action,
+                context: Context<F.State>(
+                    statePointer: pointer,
+                    id: id
+                )
             )
-
-            return self.feature.process(action: action, context: context)
         }
 
         // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
@@ -322,7 +318,7 @@ extension Feature {
         state: State,
         previewActionMapper: ((Action) -> Action?)?
     ) -> Self {
-        let feature = Self(state: state)
+        let feature = Self(previewState: state)
         feature.previewActionMapper = previewActionMapper
         return feature
     }

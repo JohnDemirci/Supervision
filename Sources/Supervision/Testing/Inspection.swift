@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import IssueReporting
 
 public protocol Inspection<Action, Environment>: AnyObject, Identifiable {
     typealias InspectedWork = Work<Action, Environment>
@@ -38,13 +39,18 @@ extension _Inspection {
     }
 }
 
+public enum InspectionFailure: Error {
+    case scopeMismatch
+    case castingFailed
+}
+
 extension Inspection {
     @discardableResult
     public func assertDone(
         file: StaticString = #file,
         line: UInt = #line
-    ) -> DoneInspection<Action, Environment> {
-        let inspection = assertConcrete(
+    ) throws -> DoneInspection<Action, Environment> {
+        let inspection = try assertConcrete(
             scope: .done,
             as: DoneInspection<Action, Environment>.self,
             file: file,
@@ -59,8 +65,8 @@ extension Inspection {
     public func assertCancel(
         file: StaticString = #file,
         line: UInt = #line
-    ) -> CancelInspection<Action, Environment> {
-        let inspection = assertConcrete(
+    ) throws -> CancelInspection<Action, Environment> {
+        let inspection = try assertConcrete(
             scope: .cancel,
             as: CancelInspection<Action, Environment>.self,
             file: file,
@@ -75,8 +81,8 @@ extension Inspection {
     public func assertRun(
         file: StaticString = #file,
         line: UInt = #line
-    ) -> RunInspection<Action, Environment> {
-        let inspection = assertConcrete(
+    ) throws -> RunInspection<Action, Environment> {
+        let inspection = try assertConcrete(
             scope: .run,
             as: RunInspection<Action, Environment>.self,
             file: file,
@@ -95,8 +101,8 @@ extension Inspection {
     public func assertMerge(
         file: StaticString = #file,
         line: UInt = #line
-    ) -> MergeInspection<Action, Environment> {
-        assertConcrete(
+    ) throws -> MergeInspection<Action, Environment> {
+        try assertConcrete(
             scope: .merge,
             file: file,
             line: line
@@ -106,8 +112,8 @@ extension Inspection {
     public func assertConcatenate(
         file: StaticString = #file,
         line: UInt = #line
-    ) -> ConcatenateInspection<Action, Environment> {
-        assertConcrete(
+    ) throws -> ConcatenateInspection<Action, Environment> {
+        try assertConcrete(
             scope: .concatenate,
             file: file,
             line: line
@@ -119,21 +125,17 @@ extension Inspection {
         as inspectionType: T.Type = T.self,
         file: StaticString,
         line: UInt
-    ) -> T where T.Action == Action, T.Environment == Environment {
-        precondition(
-            scope == expectedScope,
-            "Expected inspection scope \(expectedScope), got \(scope).",
-            file: file,
-            line: line
-        )
+    ) throws -> T where T.Action == Action, T.Environment == Environment {
+        guard scope == expectedScope else {
+            reportIssue(InspectionFailure.scopeMismatch)
+            throw InspectionFailure.scopeMismatch
+        }
 
         guard let typedInspection = self as? T else {
-            preconditionFailure(
-                "Expected inspection type \(inspectionType), got \(Swift.type(of: self)).",
-                file: file,
-                line: line
-            )
+            reportIssue(InspectionFailure.castingFailed)
+            throw InspectionFailure.castingFailed
         }
+
         return typedInspection
     }
 }

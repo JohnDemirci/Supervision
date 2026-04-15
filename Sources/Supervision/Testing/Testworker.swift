@@ -39,7 +39,7 @@ final class TestWorker<Action, Environment> {
             CancelInspection(work: work) { [weak self] event in
                 self?.handleAction(.cancelInspectionEvent(event))
             }
-        case .run(let run):
+        case .run:
             RunInspection(work: work) { [weak self] event in
                 self?.handleAction(.runInspectionEvent(event))
             }
@@ -57,7 +57,7 @@ final class TestWorker<Action, Environment> {
             $0.id == inspection.id
         }
 
-        let existingSubscriptionIndex = self.queue.firstIndex {
+        let existingSubscriptionIndex = self.subscriptionQueue.firstIndex {
             $0.id == inspection.id
         }
 
@@ -72,12 +72,12 @@ final class TestWorker<Action, Environment> {
         }
 
         if let existingSubscriptionIndex {
-            if let existingInspection = queue[existingSubscriptionIndex] as? RunInspection<Action, Environment> {
-                if existingInspection.cancelInFlight {
-                    subscriptionQueue.remove(at: existingSubscriptionIndex)
-                } else {
-                    return existingInspection
-                }
+            let existingInspection = subscriptionQueue[existingSubscriptionIndex]
+
+            if existingInspection.cancelInFlight {
+                subscriptionQueue.remove(at: existingSubscriptionIndex)
+            } else {
+                return existingInspection
             }
         }
 
@@ -157,7 +157,7 @@ private extension TestWorker {
 
             var didFound = false
 
-            for (index, inspection) in queue.enumerated() {
+            for inspection in queue {
                 switch inspection.work.operation {
                 case .done, .cancel:
                     continue
@@ -165,12 +165,15 @@ private extension TestWorker {
                     if inspection.id == cancelleeID {
                         didFound = true
 
-                        let x = inspection.assertRun()
+                        guard let x = try? inspection.assertRun() else {
+                            continue
+                        }
+
                         x.didComplete = true
                         break
                     }
                 case .concatenate:
-                    let concreteInspection = inspection.assertConcatenate()
+                    guard let concreteInspection = try? inspection.assertConcatenate() else { continue }
 
                     let childIndex = concreteInspection.childInspections.firstIndex {
                         $0.id == cancelleeID
@@ -188,7 +191,7 @@ private extension TestWorker {
                     break
 
                 case .merge:
-                    let concreteInspection = inspection.assertMerge()
+                    guard let concreteInspection = try? inspection.assertMerge() else { continue }
 
                     let childIndex = concreteInspection.childInspections.firstIndex {
                         $0.id == cancelleeID
@@ -205,8 +208,9 @@ private extension TestWorker {
                     concreteInspection.childInspections.removeAll()
                 }
             }
+
             if !didFound {
-                for (index, inspection) in subscriptionQueue.enumerated() {
+                for inspection in subscriptionQueue {
                     if inspection.id == cancelleeID {
                         didFound = true
                         inspection.didComplete = true
