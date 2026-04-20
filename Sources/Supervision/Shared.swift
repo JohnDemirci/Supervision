@@ -34,9 +34,9 @@ public final class Shared<Blueprint: FeatureBlueprint, Value, MappedValue>: Obse
     private func observe() {
         withObservationTracking {
             let _ = feature._state[keyPath: keypath]
-        } onChange: {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        } onChange: { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
                 observationRegistar.withMutation(of: self, keyPath: \.value, {})
                 observe()
             }

@@ -17,16 +17,9 @@ public struct Context<State>: ~Copyable, ~Escapable {
     @usableFromInline
     internal let statePointer: UnsafeMutablePointer<State>
 
-    public let id: ReferenceIdentifier
-
-    @inlinable
     @_lifetime(borrow statePointer)
-    internal init(
-        statePointer: UnsafeMutablePointer<State>,
-        id: ReferenceIdentifier
-    ) {
+    internal init(statePointer: UnsafeMutablePointer<State>) {
         self.statePointer = statePointer
-        self.id = id
     }
 
     @inlinable

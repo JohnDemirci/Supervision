@@ -38,8 +38,7 @@ extension Tester {
     ) -> any Inspection<Action, Environment> {
         let work = withUnsafeMutablePointer(to: &_state) { [self] pointer in
             let context = Context<State>(
-                statePointer: pointer,
-                id: id
+                statePointer: pointer
             )
 
             return blueprint.process(action: action, context: context)

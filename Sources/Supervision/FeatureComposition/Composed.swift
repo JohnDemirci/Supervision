@@ -10,46 +10,6 @@ import Observation
 import ValueObservation
 
 @MainActor
-public protocol ParentFeaturesProtocol: Sendable {
-    associatedtype Actions
-
-    func send(_ actions: Actions)
-}
-
-@MainActor
-public struct ParentFeatures<each Blueprint: FeatureBlueprint>: ParentFeaturesProtocol, Sendable
-where
-    repeat each Blueprint: FeatureBlueprint
-{
-    public typealias Actions = (repeat ((each Blueprint).Action?))
-
-    @usableFromInline
-    let features: (repeat Feature<each Blueprint>)
-
-    public init(_ features: repeat Feature<each Blueprint>) {
-        self.features = (repeat each features)
-    }
-
-    public func withFeatures<Result>(
-        _ body: (repeat Feature<each Blueprint>) -> Result
-    ) -> Result {
-        body(repeat each features)
-    }
-
-    public func send(_ actions: Actions) {
-        repeat route((each actions), to: (each features))
-    }
-
-    private func route<F: FeatureBlueprint>(
-        _ action: F.Action?,
-        to feature: Feature<F>
-    ) {
-        guard let action else { return }
-        feature.send(action)
-    }
-}
-
-@MainActor
 public protocol Composed: Sendable {
     associatedtype State: ObservableValue
     associatedtype Action: Sendable
@@ -59,13 +19,7 @@ public protocol Composed: Sendable {
 
     func mapAction(_ action: Action) -> Parents.Actions
     func mapState() -> State
-    func updateState(_ state: inout State)
-}
-
-public extension Composed {
-    func updateState(_ state: inout State) {
-        state = mapState()
-    }
+    func updateState(context: borrowing Context<State>)
 }
 
 @MainActor
@@ -109,7 +63,11 @@ private extension ComposedFeature {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                composed.updateState(&_state)
+                withUnsafeMutablePointer(to: &_state) { pointer in
+                    composed.updateState(
+                        context: Context(statePointer: pointer)
+                    )
+                }
                 observe()
             }
         }

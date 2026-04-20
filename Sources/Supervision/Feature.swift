@@ -259,13 +259,11 @@ extension Feature {
 // MARK: - Feature + Direct Binding
 
 extension Feature {
-    @usableFromInline
     func applyDirectMutation<Value>(keyPath: WritableKeyPath<State, Value>, value: Value) {
         _state[keyPath: keyPath] = value
     }
 
     @discardableResult
-    @usableFromInline
     func applyDirectMutation<Value: Equatable>(keyPath: WritableKeyPath<State, Value>, value: Value) -> Bool {
         let currentValue = _state[keyPath: keyPath]
         guard currentValue != value else { return false }
@@ -332,8 +330,7 @@ extension Feature {
             feature.process(
                 action: action,
                 context: Context<F.State>(
-                    statePointer: pointer,
-                    id: id
+                    statePointer: pointer
                 )
             )
         }

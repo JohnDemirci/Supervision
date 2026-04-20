@@ -144,7 +144,6 @@ extension Feature {
     ///
     /// ## See Also
     /// - `directBinding(_:animation:)`: For cases where animation performance is critical
-    @inlinable
     public func binding<Value>(
         _ keyPath: KeyPath<State, Value>,
         send action: @escaping (Value) -> Action,
@@ -360,7 +359,6 @@ extension Feature {
     ///
     /// ## See Also
     /// - `binding(_:send:animation:)`: Recommended action-based binding for business logic
-    @inlinable
     public func directBinding<Value>(
         _ keyPath: WritableKeyPath<State, Value>,
         animation: Animation? = nil
@@ -397,7 +395,6 @@ extension Feature {
     ///   - keyPath: WritableKeyPath to the Equatable state property to bind
     ///   - animation: Optional default animation to use when transaction has none
     /// - Returns: A transaction-aware Binding with Equatable-optimized writes
-    @inlinable
     public func directBinding<Value: Equatable>(
         _ keyPath: WritableKeyPath<State, Value>,
         animation: Animation? = nil
@@ -420,7 +417,6 @@ extension Feature {
         )
     }
 
-    @inlinable
     public func isPresent<Value>(
         keyPath: WritableKeyPath<State, Value?>,
         animation: Animation? = nil
