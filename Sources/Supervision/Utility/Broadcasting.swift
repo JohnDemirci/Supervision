@@ -10,53 +10,73 @@ import Foundation
 public actor Broadcaster {
     public typealias Message = any BroadcastMessage
 
-    private var continuations: [ReferenceIdentifier: AsyncStream<Message>.Continuation]
+    private struct Subscription {
+        let token: UUID
+        let stream: AsyncStream<Message>
+        let continuation: AsyncStream<Message>.Continuation
+    }
+
+    private var subscriptions: [ReferenceIdentifier: Subscription]
 
     public init() {
-        continuations = [:]
+        subscriptions = [:]
     }
 
     public func subscribe(
         bufferingPolicy: AsyncStream<Message>.Continuation.BufferingPolicy = .unbounded,
         id: ReferenceIdentifier
     ) -> AsyncStream<Message> {
+        if let existing = subscriptions[id] {
+            return existing.stream
+        }
+
         let (stream, continuation) = AsyncStream.makeStream(
             of: Message.self,
             bufferingPolicy: bufferingPolicy
         )
-        continuations[id] = continuation
+
+        let subscription = Subscription(
+            token: UUID(),
+            stream: stream,
+            continuation: continuation
+        )
+
+        subscriptions[id] = subscription
+
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.removeSubscriber(id) }
+            Task { await self?.removeSubscriber(id, token: subscription.token) }
         }
+
         return stream
     }
 
     public func broadcast(message: some BroadcastMessage) {
-        guard !continuations.isEmpty else { return }
+        guard !subscriptions.isEmpty else { return }
 
-        var terminated: [ReferenceIdentifier] = []
-        for (id, continuation) in continuations {
-            if case .terminated = continuation.yield(message) {
-                terminated.append(id)
+        var terminated: [(ReferenceIdentifier, UUID)] = []
+        for (id, subscription) in subscriptions {
+            if case .terminated = subscription.continuation.yield(message) {
+                terminated.append((id, subscription.token))
             }
         }
 
         if !terminated.isEmpty {
-            for id in terminated {
-                continuations[id] = nil
+            for (id, token) in terminated {
+                removeSubscriber(id, token: token)
             }
         }
     }
 
     public func finish() {
-        for continuation in continuations.values {
-            continuation.finish()
+        for subscription in subscriptions.values {
+            subscription.continuation.finish()
         }
-        continuations.removeAll()
+        subscriptions.removeAll()
     }
 
-    private func removeSubscriber(_ id: ReferenceIdentifier) {
-        continuations[id] = nil
+    private func removeSubscriber(_ id: ReferenceIdentifier, token: UUID) {
+        guard subscriptions[id]?.token == token else { return }
+        subscriptions[id] = nil
     }
 }
 

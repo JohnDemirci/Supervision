@@ -312,7 +312,7 @@ extension Work {
 
     /// A Work type that runs multiple works sequentially.
     ///
-    /// - Note: Upon failure, the remaining works will not be fired off.
+    /// - Note: Upon failure, the remaining works will still be fired off.
     ///
     /// - Parameters:
     ///    - works: An array of ``Work``
