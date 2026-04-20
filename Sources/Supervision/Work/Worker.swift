@@ -16,9 +16,8 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
 
     /// Active tasks indexed by their cancellation ID.
     private var tasks: [AnyHashableSendable: TrackedTask]
-    private var untracked: [UUID: Task<Void, Never>] = [:]
-
-    private var lastExecutionTimes: [AnyHashableSendable: ContinuousClock.Instant] = [:]
+    private var untracked: [UUID: Task<Void, Never>]
+    private var lastExecutionTimes: [AnyHashableSendable: ContinuousClock.Instant]
     private let logger = Logger(
         subsystem: "Supervision",
         category: "Worker<\(Action.self), \(Environment.self)>"
@@ -26,6 +25,8 @@ actor Worker<Action: Sendable, Environment: Sendable>: Sendable {
 
     init() {
         tasks = [:]
+        untracked = [:]
+        lastExecutionTimes = [:]
     }
 
     /// Cancels all tracked tasks when the worker is deallocated.

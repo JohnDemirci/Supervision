@@ -74,7 +74,7 @@ public protocol FeatureBlueprint: Sendable {
 
     /// Actions that are dispatched, or a result of users' interactions
     associatedtype Action: Sendable
-    
+
     /// Typically a struct that contains all the dependencies such as RESTClient to perform work.
     associatedtype Dependency: Sendable
 
@@ -88,24 +88,4 @@ public protocol FeatureBlueprint: Sendable {
     func process(action: Action, context: borrowing Context<State>) -> FeatureWork
 
     init()
-}
-
-@usableFromInline
-struct AnyMutation<State> {
-    @usableFromInline
-    let keyPath: PartialKeyPath<State>
-
-    @usableFromInline
-    var apply: (inout State) -> Void
-
-    @usableFromInline
-    init<Value>(
-        _ keyPath: WritableKeyPath<State, Value>,
-        _ value: Value
-    ) {
-        self.keyPath = keyPath
-        self.apply = { state in
-            state[keyPath: keyPath] = value
-        }
-    }
 }

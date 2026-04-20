@@ -214,6 +214,74 @@ let sharedCount = Shared(feature: feature, keypath: \.count)
 let value = sharedCount.value
 ```
 
+## Feature Composition
+
+Use `Composed` to derive a single feature from existing live features.
+
+```swift
+enum DashboardAction: Sendable {
+    case increment
+    case setEnabled(Bool)
+    case synchronize
+}
+
+@ObservableValue
+struct DashboardState: Equatable {
+    var count: Int
+    var isEnabled: Bool
+}
+
+let dashboard = Composed.of(counterFeature, toggleFeature).composedBy(
+    send: { (action: DashboardAction) in
+        switch action {
+        case .increment:
+            (.increment, nil)
+        case .setEnabled(let isEnabled):
+            (nil, .setEnabled(isEnabled))
+        case .synchronize:
+            (.increment, .setEnabled(true))
+        }
+    },
+    mapValue: { counterState, toggleState in
+        DashboardState(
+            count: counterState.count,
+            isEnabled: toggleState.isEnabled
+        )
+    }
+)
+
+dashboard.send(.synchronize)
+print(dashboard.count) // derived from child features
+```
+
+If you prefer a reusable mapper object, use `ComposedBlueprint`:
+
+```swift
+let blueprint = ComposedBlueprint<
+    DashboardState,
+    DashboardAction,
+    (CounterFeature.State, ToggleFeature.State),
+    (CounterFeature.Action?, ToggleFeature.Action?)
+>(
+    send: { action in
+        switch action {
+        case .increment:
+            (.increment, nil)
+        case .setEnabled(let isEnabled):
+            (nil, .setEnabled(isEnabled))
+        case .synchronize:
+            (.increment, .setEnabled(true))
+        }
+    },
+    mapValue: { states in
+        let (counterState, toggleState) = states
+        return DashboardState(count: counterState.count, isEnabled: toggleState.isEnabled)
+    }
+)
+
+let dashboard = Composed.of(counterFeature, toggleFeature).composedBy(blueprint)
+```
+
 ## Broadcasting
 
 ```swift
@@ -255,3 +323,4 @@ swift package describe
 ## More Docs
 
 - `Docs/Goals.md`
+- `Docs/Composition.md`

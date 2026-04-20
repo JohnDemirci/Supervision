@@ -218,6 +218,46 @@ let sameInstance = featureA === featureB
 **Goal**
 Support both architecture-first bindings and high-performance direct bindings.
 
+## Goal 7: Compose live features into derived state
+
+**Goal**
+Support lightweight composition of existing live features into a derived, observable feature without introducing a new parent reducer/store.
+
+**Alignment in code**
+- `Composed.of(...)` accepts one or more existing `Feature` instances using variadic generics.
+- `ComposedBlueprint` defines how child states map into a derived `State` and how composed actions fan out into optional child actions.
+- `ComposedBuilder.composedBy(...)` supports both an explicit `ComposedBlueprint` and closure-based convenience overload.
+- `ComposedFeature` forwards actions to children and derives its `state` from current child states.
+
+**How to use**
+1. Create or obtain the child `Feature` instances you want to compose.
+2. Define a composed `Action` and derived `State` for the UI boundary.
+3. Call `Composed.of(...)` with child features.
+4. Provide `send` mapping from composed action to optional child actions.
+5. Provide `mapValue` mapping from child states to derived state.
+
+**Example**
+```swift
+let dashboard = Composed.of(profileFeature, settingsFeature).composedBy(
+    send: { (action: DashboardAction) in
+        switch action {
+        case .refresh:
+            (.reload, .fetchPreferences)
+        case .toggleNotifications(let enabled):
+            (nil, .setNotificationsEnabled(enabled))
+        }
+    },
+    mapValue: { profile, settings in
+        DashboardState(
+            name: profile.displayName,
+            notificationsEnabled: settings.notificationsEnabled
+        )
+    }
+)
+```
+
+You can also package the mapping in a reusable `ComposedBlueprint` and pass it to `.composedBy(blueprint)`.
+
 **Alignment in code**
 - `binding(_:send:animation:)` routes writes through actions (`send`) and `process`.
 - `directBinding(_:animation:)` mutates state directly for UI-only/performance-heavy cases.

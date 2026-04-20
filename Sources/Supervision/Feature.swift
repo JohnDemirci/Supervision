@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import OSLog
+import IssueReporting
 @_exported import ValueObservation
 
 /// The source-of-truth owner for a feature's state, similar to stores in Redux and TCA.
@@ -150,9 +151,7 @@ public final class Feature<F: FeatureBlueprint>: Observable {
     @inlinable
     @inline(__always)
     public var state: State {
-        _read {
-            yield self._state
-        }
+        _read { yield self._state }
     }
 
     @inlinable
@@ -231,29 +230,12 @@ extension Feature {
     /// - Parameters:
     ///    - action: Action to be performed
     public func send(_ action: Action) {
-        #if DEBUG
-        if let previewActionMapper = previewActionMapper, let mappedAction = previewActionMapper(action) {
-            send(mappedAction)
-            return
-        }
-        #endif
+        logger.debug("\( String("\(action) is received by \(Self.self)") )")
 
-        let work: F.FeatureWork = withUnsafeMutablePointer(to: &_state) { [feature] pointer in
-            feature.process(
-                action: action,
-                context: Context<F.State>(
-                    statePointer: pointer,
-                    id: id
-                )
-            )
-        }
-
-        // we want to cancel in flight operations instead of waiting actionContinuation to finish finish
-        if case .cancel = work.operation {
-            Task { await worker.handle(work: work, environment: dependency, send: { _ in }) }
-            return
-        }
-
+        guard continueAfterActionMapper(action) else { return }
+        let work = work(from: action)
+        logger.debug("")
+        guard !didHandleCancellation(from: work) else { return }
         actionContinuation.yield(work)
     }
 
@@ -263,7 +245,11 @@ extension Feature {
             return
         case .concatenate, .merge, .run, .cancel:
             await worker.handle(work: work, environment: dependency) { @MainActor [weak self] action in
-                guard let self else { return }
+                guard let self else {
+                    reportIssue("self is deallocated when processing an action")
+                    return
+                }
+
                 send(action)
             }
         }
@@ -285,6 +271,82 @@ extension Feature {
         guard currentValue != value else { return false }
         _state[keyPath: keyPath] = value
         return true
+    }
+}
+
+#if DEBUG
+extension Feature {
+
+    /// Creates a feature instance configured for SwiftUI previews.
+    ///
+    /// Use this to provide an initial preview state and optionally intercept outgoing
+    /// actions while running in `DEBUG` builds.
+    ///
+    /// - Parameters:
+    ///   - state: The initial state used to initialize the preview feature.
+    ///   - previewActionMapper: An optional mapper that can intercept actions sent to the feature.
+    ///     Return a replacement action to forward that action instead of the original, or `nil`
+    ///     to allow the original action to continue normally.
+    /// - Returns: A preview-configured feature instance.
+    ///
+    /// Example:
+    /// ```swift
+    /// let feature = MyFeature.makePreview(
+    ///     state: .init(),
+    ///     previewActionMapper: { action in
+    ///         switch action {
+    ///         case .onAppear: return .loadMockData
+    ///         default: return nil
+    ///         }
+    ///     }
+    /// )
+    /// ```
+    public static func makePreview(
+        state: State,
+        previewActionMapper: ((Action) -> Action?)?
+    ) -> Self {
+        let feature = Self(previewState: state)
+        feature.previewActionMapper = previewActionMapper
+        return feature
+    }
+}
+#endif
+
+extension Feature {
+    @inline(__always)
+    private func continueAfterActionMapper(_ action: Action) -> Bool {
+        #if DEBUG
+        if let previewActionMapper {
+            if let mappedAction = previewActionMapper(action) {
+                send(mappedAction)
+                return false
+            }
+        }
+        #endif
+        return true
+    }
+
+    @inline(__always)
+    private func work(from action: Action) -> Work<Action, Dependency> {
+        withUnsafeMutablePointer(to: &_state) { [feature] pointer in
+            feature.process(
+                action: action,
+                context: Context<F.State>(
+                    statePointer: pointer,
+                    id: id
+                )
+            )
+        }
+    }
+
+    @inline(__always)
+    private func didHandleCancellation(from work: Work<Action, Dependency>) -> Bool {
+        if case .cancel = work.operation {
+            Task { await worker.handle(work: work, environment: dependency, send: { _ in }) }
+            return true
+        }
+
+        return false
     }
 }
 
@@ -311,16 +373,3 @@ extension Feature: @MainActor Hashable {
         hasher.combine(ObjectIdentifier(self))
     }
 }
-
-#if DEBUG
-extension Feature {
-    public static func makePreview(
-        state: State,
-        previewActionMapper: ((Action) -> Action?)?
-    ) -> Self {
-        let feature = Self(previewState: state)
-        feature.previewActionMapper = previewActionMapper
-        return feature
-    }
-}
-#endif

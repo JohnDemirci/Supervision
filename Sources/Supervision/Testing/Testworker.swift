@@ -81,15 +81,11 @@ final class TestWorker<Action, Environment> {
             }
         }
 
-        if case .run = inspection.scope {
-            guard let x = inspection as? RunInspection<Action, Environment> else {
-                fatalError()
-            }
-
-            if x.isSubscription {
-                subscriptionQueue.append(x)
+        if let runInspection = inspection as? RunInspection<Action, Environment> {
+            if runInspection.isSubscription {
+                subscriptionQueue.append(runInspection)
                 return inspection
-            } else if x.config.fireAndForget {
+            } else if runInspection.config.fireAndForget {
                 return inspection
             }
         }
