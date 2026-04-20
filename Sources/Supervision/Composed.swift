@@ -10,65 +10,61 @@ import Observation
 import ValueObservation
 
 @MainActor
+public protocol ParentFeaturesProtocol: Sendable {
+    associatedtype Actions
+
+    func send(_ actions: Actions)
+}
+
+@MainActor
+public struct ParentFeatures<each Blueprint: FeatureBlueprint>: ParentFeaturesProtocol, Sendable
+where
+    repeat each Blueprint: FeatureBlueprint
+{
+    public typealias Actions = (repeat ((each Blueprint).Action?))
+
+    @usableFromInline
+    let features: (repeat Feature<each Blueprint>)
+
+    public init(_ features: repeat Feature<each Blueprint>) {
+        self.features = (repeat each features)
+    }
+
+    public func withFeatures<Result>(
+        _ body: (repeat Feature<each Blueprint>) -> Result
+    ) -> Result {
+        body(repeat each features)
+    }
+
+    public func send(_ actions: Actions) {
+        repeat route((each actions), to: (each features))
+    }
+
+    private func route<F: FeatureBlueprint>(
+        _ action: F.Action?,
+        to feature: Feature<F>
+    ) {
+        guard let action else { return }
+        feature.send(action)
+    }
+}
+
+@MainActor
 public protocol Composed: Sendable {
     associatedtype State: ObservableValue
-    associatedtype Action
-    associatedtype A: FeatureBlueprint
-    associatedtype B: FeatureBlueprint
+    associatedtype Action: Sendable
+    associatedtype Parents: ParentFeaturesProtocol
 
-    var a: Feature<A> { get }
-    var b: Feature<B> { get }
+    var parents: Parents { get }
 
-    func mapAction(_ action: Action) -> (A.Action?, B.Action?)
+    func mapAction(_ action: Action) -> Parents.Actions
     func mapState() -> State
-    func updateState(_ context: borrowing Context<State>)
+    func updateState(_ state: inout State)
 }
 
-extension Composed {
-    func updateState(_ context: borrowing Context<State>) {
-        context.state = mapState()
-    }
-}
-
-struct CounterToggleComposition: Composed {
-    @ObservableValue
-    struct State {
-        var counter: Int
-        var isToggled: Bool
-
-        init(counter: Int, isToggled: Bool) {
-            self.counter = counter
-            self.isToggled = isToggled
-        }
-    }
-
-    enum Action {
-        case increment
-        case decrement
-        case toggle
-    }
-
-    let a: Feature<CounterFeature>
-    let b: Feature<ToggleFeature>
-
-    func mapAction(_ action: Action) -> (CounterFeature.Action?, ToggleFeature.Action?) {
-        switch action {
-        case .increment:
-            return (.increment, nil)
-        case .decrement:
-            return (.decrement, nil)
-        case .toggle:
-            return (nil, .toggle)
-        }
-    }
-
-    func mapState() -> State {
-        State(counter: a.counter, isToggled: b.isToggled)
-    }
-
-    func updateState(_ context: borrowing Context<State>) {
-        context.counter = a.state.counter
-        context.isToggled = b.state.isToggled
+public extension Composed {
+    func updateState(_ state: inout State) {
+        state = mapState()
     }
 }
 
@@ -78,92 +74,56 @@ public final class ComposedFeature<C: Composed>: Observable {
     public typealias State = C.State
     public typealias Action = C.Action
 
-    let composed: C
-    private var _state: State
+    public let composed: C
 
-    var state: State {
-        _read { yield _state }
-    }
+    @usableFromInline
+    internal var _state: State
 
-    public subscript <Subject>(dynamicMember keyPath: ReferenceWritableKeyPath<State, Subject>) -> Subject {
-        _read { yield _state[keyPath: keyPath] }
-    }
-
-    init(composed: C) {
+    public init(composed: C) {
         self.composed = composed
         self._state = composed.mapState()
         observe()
     }
 
-    private func observe() {
+    @inlinable
+    @inline(__always)
+    public var state: State {
+        _read { yield _state }
+    }
+
+    @inlinable
+    @inline(__always)
+    public subscript<Value>(dynamicMember keyPath: KeyPath<State, Value>) -> Value {
+        _read { yield _state[keyPath: keyPath] }
+    }
+
+    public func send(_ action: Action) {
+        composed.parents.send(composed.mapAction(action))
+    }
+}
+
+private extension ComposedFeature {
+    func observe() {
         withObservationTracking {
             _ = composed.mapState()
         } onChange: { [weak self] in
-            guard let self else { return }
-            Task { @MainActor in
-                withUnsafeMutablePointer(to: &_state) { pointer in
-                    let context = Context(statePointer: pointer, id: ReferenceIdentifier(id: UUID()))
-                    composed.updateState(context)
-                }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                composed.updateState(&_state)
                 observe()
             }
         }
     }
+}
 
-    func send(_ action: Action) {
-        let actions = composed.mapAction(action)
-
-        if let aAction = actions.0 {
-            composed.a.send(aAction)
-        }
-        
-        if let bAction = actions.1 {
-            composed.b.send(bAction)
-        }
+extension ComposedFeature: @MainActor Equatable {
+    public static func == (lhs: ComposedFeature<C>, rhs: ComposedFeature<C>) -> Bool {
+        lhs === rhs
     }
 }
 
-struct CounterFeature: FeatureBlueprint {
-    @ObservableValue
-    struct State {
-        var counter: Int = 0
-    }
-
-    enum Action {
-        case increment
-        case decrement
-    }
-
-    typealias Dependency = Void
-
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-        switch action {
-        case .increment:
-            context.counter += 1
-        case .decrement:
-            context.counter -= 1
-        }
-        return .done
-    }
-}
-
-struct ToggleFeature: FeatureBlueprint {
-    @ObservableValue
-    struct State {
-        var isToggled: Bool = false
-    }
-
-    enum Action {
-        case toggle
-    }
-
-    typealias Dependency = Void
-
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
-        switch action {
-        case .toggle:
-            context.isToggled.toggle()
-        }
-        return .done
+extension ComposedFeature: @MainActor Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
     }
 }

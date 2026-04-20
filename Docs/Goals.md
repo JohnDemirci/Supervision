@@ -224,39 +224,58 @@ Support both architecture-first bindings and high-performance direct bindings.
 Support lightweight composition of existing live features into a derived, observable feature without introducing a new parent reducer/store.
 
 **Alignment in code**
-- `Composed.of(...)` accepts one or more existing `Feature` instances using variadic generics.
-- `ComposedBlueprint` defines how child states map into a derived `State` and how composed actions fan out into optional child actions.
-- `ComposedBuilder.composedBy(...)` supports both an explicit `ComposedBlueprint` and closure-based convenience overload.
-- `ComposedFeature` forwards actions to children and derives its `state` from current child states.
+- `ParentFeatures<...>` uses parameter packs to hold any number of live parent `Feature` instances.
+- `Composed.Parents` binds a composition to a concrete `ParentFeatures<...>` set while keeping `ComposedFeature<C>` non-variadic.
+- `ComposedFeature` forwards actions through `parents.send(...)` and derives its `state` from current child feature states.
+- `updateState(_:)` allows in-place recomputation of composed state, preserving fine-grained observation on the composed `State`.
 
 **How to use**
 1. Create or obtain the child `Feature` instances you want to compose.
 2. Define a composed `Action` and derived `State` for the UI boundary.
-3. Call `Composed.of(...)` with child features.
-4. Provide `send` mapping from composed action to optional child actions.
-5. Provide `mapValue` mapping from child states to derived state.
+3. Define `typealias Parents = ParentFeatures<...>` on the composition.
+4. Provide `mapAction(_:)` from composed action to `Parents.Actions`.
+5. Implement `mapState()` and, when needed, `updateState(_:)` using `parents.withFeatures { ... }`.
+6. Construct `ComposedFeature(composed: ...)`.
 
 **Example**
 ```swift
-let dashboard = Composed.of(profileFeature, settingsFeature).composedBy(
-    send: { (action: DashboardAction) in
+struct DashboardComposition: Composed {
+    typealias Parents = ParentFeatures<ProfileFeature, SettingsFeature>
+
+    let parents: Parents
+
+    func mapAction(_ action: DashboardAction) -> Parents.Actions {
         switch action {
         case .refresh:
             (.reload, .fetchPreferences)
         case .toggleNotifications(let enabled):
             (nil, .setNotificationsEnabled(enabled))
         }
-    },
-    mapValue: { profile, settings in
-        DashboardState(
-            name: profile.displayName,
-            notificationsEnabled: settings.notificationsEnabled
-        )
     }
+
+    func mapState() -> DashboardState {
+        parents.withFeatures { profile, settings in
+            DashboardState(
+                name: profile.displayName,
+                notificationsEnabled: settings.notificationsEnabled
+            )
+        }
+    }
+
+    func updateState(_ state: inout DashboardState) {
+        parents.withFeatures { profile, settings in
+            state.name = profile.displayName
+            state.notificationsEnabled = settings.notificationsEnabled
+        }
+    }
+}
+
+let dashboard = ComposedFeature(
+    composed: DashboardComposition(
+        parents: ParentFeatures(profileFeature, settingsFeature)
+    )
 )
 ```
-
-You can also package the mapping in a reusable `ComposedBlueprint` and pass it to `.composedBy(blueprint)`.
 
 **Alignment in code**
 - `binding(_:send:animation:)` routes writes through actions (`send`) and `process`.
