@@ -43,6 +43,10 @@ public final class FeatureContainer<Dependency> {
         self.dependency = dependency
         features = .weakToWeakObjects()
     }
+    
+    var count: Int {
+        features.count
+    }
 
     private func getOrCreate<F: FeatureBlueprint>(
         id: ReferenceIdentifier,
@@ -55,9 +59,29 @@ public final class FeatureContainer<Dependency> {
         features.setObject(feature, forKey: feature.id)
         return feature
     }
+    
+    private func getOrCreate<C: Composed>(
+        id: ReferenceIdentifier,
+        create: @MainActor () -> ComposedFeature<C>
+    ) -> ComposedFeature<C> {
+        if let existing = features.object(forKey: id) {
+            return unsafeDowncast(existing, to: ComposedFeature<C>.self)
+        }
+        
+        let composed = create()
+        features.setObject(composed, forKey: id)
+        return composed
+    }
 }
 
 extension FeatureContainer {
+    public func composedFeature<C: Composed>(
+        composed: C
+    ) -> ComposedFeature<C> {
+        getOrCreate(id: composed.parents.id) {
+            ComposedFeature(composed: composed)
+        }
+    }
     /// Provides a Feature
     ///
     /// ## Behavior ##

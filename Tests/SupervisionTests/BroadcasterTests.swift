@@ -48,7 +48,7 @@ struct BroadcasterTests {
                 return await iterator.next()
             }
             group.addTask {
-                try? await Task.sleep(for: .milliseconds(250))
+                await Task.megaYield()
                 return nil
             }
 

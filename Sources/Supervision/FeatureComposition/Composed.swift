@@ -32,8 +32,8 @@ public final class ComposedFeature<C: Composed>: Observable {
 
     @usableFromInline
     internal var _state: State
-
-    public init(composed: C) {
+    
+    init(composed: C) {
         self.composed = composed
         self._state = composed.mapState()
         observe()

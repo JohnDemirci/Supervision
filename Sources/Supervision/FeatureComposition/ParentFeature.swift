@@ -9,6 +9,8 @@
 public protocol ParentFeaturesProtocol: Sendable {
     associatedtype Actions
 
+    var id: ReferenceIdentifier { get }
+    
     func send(_ actions: Actions)
 }
 
@@ -20,7 +22,16 @@ public struct ParentFeatures<each Blueprint: FeatureBlueprint>: ParentFeaturesPr
 
     public init(_ features: repeat Feature<each Blueprint>) {
         self.features = (repeat each features)
+        
+        var ids: [ReferenceIdentifier] = []
+        for feature in repeat each features {
+            ids.append(feature.id)
+        }
+        
+        self.id = ReferenceIdentifier(ids)
     }
+    
+    public let id: ReferenceIdentifier
 
     public func withFeatures<Result>(
         _ body: (repeat Feature<each Blueprint>) -> Result

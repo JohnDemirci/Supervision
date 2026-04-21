@@ -89,7 +89,7 @@ actor TodoClient {
     }
 
     func remove(_ todo: String) async throws -> String {
-        var count = currentList.count
+        let count = currentList.count
         currentList.removeAll(where: { $0 == todo })
         if currentList.count == count {
             throw NSError(domain: "com.example.todolist", code: 1, userInfo: nil)

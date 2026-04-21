@@ -11,12 +11,17 @@ import Supervision
 struct DashboardState {
     var count: Int
     var isEnabled: Bool
+    
+    init(count: Int, isEnabled: Bool) {
+        self.count = count
+        self.isEnabled = isEnabled
+    }
 }
 
 struct DashboardComposition: Composed {
     enum Action: Sendable {
         case increment
-        case setEnabled(Bool)
+        case toggle
         case synchronize
     }
 
@@ -29,26 +34,26 @@ struct DashboardComposition: Composed {
         switch action {
         case .increment:
             (.increment, nil)
-        case .setEnabled(let value):
-            (nil, .setEnabled(value))
+        case .toggle:
+            (nil, .toggle)
         case .synchronize:
-            (.increment, .setEnabled(true))
+            (.increment, .toggle)
         }
     }
 
     func mapState() -> State {
         parents.withFeatures { counter, toggle in
             DashboardState(
-                count: counter.count,
-                isEnabled: toggle.isEnabled
+                count: counter.counter,
+                isEnabled: toggle.isToggled
             )
         }
     }
 
     func updateState(context: borrowing Context<State>) {
         parents.withFeatures { counter, toggle in
-            context.count = counter.count
-            context.isEnabled = toggle.isEnabled
+            context.count = counter.counter
+            context.isEnabled = toggle.isToggled
         }
     }
 }

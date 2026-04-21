@@ -8,14 +8,13 @@
 import Foundation
 
 @MainActor
-public final class Shared<Blueprint: FeatureBlueprint, Value, MappedValue>: Observable {
+public final class Shared<Blueprint: FeatureBlueprint, Value>: Observable {
     let feature: Feature<Blueprint>
     let keypath: KeyPath<Feature<Blueprint>.State, Value>
-    let map: (Value) -> MappedValue
 
-    public var value: MappedValue {
+    public var value: Value {
         observationRegistar.access(self, keyPath: \.value)
-        return map(feature.state[keyPath: keypath])
+        return feature.state[keyPath: keypath]
     }
 
     private let observationRegistar = ObservationRegistrar()
@@ -23,11 +22,9 @@ public final class Shared<Blueprint: FeatureBlueprint, Value, MappedValue>: Obse
     public init(
         feature: Feature<Blueprint>,
         keypath: KeyPath<Feature<Blueprint>.State, Value>,
-        map: @escaping (Value) -> MappedValue
     ) {
         self.feature = feature
         self.keypath = keypath
-        self.map = map
         observe()
     }
 
@@ -44,29 +41,16 @@ public final class Shared<Blueprint: FeatureBlueprint, Value, MappedValue>: Obse
     }
 }
 
-extension Shared where Value == MappedValue {
-    public convenience init(
-        feature: Feature<Blueprint>,
-        keypath: KeyPath<Feature<Blueprint>.State, Value>
-    ) {
-        self.init(
-            feature: feature,
-            keypath: keypath,
-            map: \.self
-        )
-    }
-}
-
-extension Shared: @MainActor Equatable where MappedValue: Equatable {
+extension Shared: @MainActor Equatable {
     public static func == (
-        lhs: Shared<Blueprint, Value, MappedValue>,
-        rhs: Shared<Blueprint, Value, MappedValue>
+        lhs: Shared<Blueprint, Value>,
+        rhs: Shared<Blueprint, Value>
     ) -> Bool {
         lhs === rhs
     }
 }
 
-extension Shared: @MainActor Hashable where MappedValue: Hashable {
+extension Shared: @MainActor Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
     }

@@ -236,6 +236,9 @@ extension Feature {
         let work = work(from: action)
         logger.debug("")
         guard !didHandleCancellation(from: work) else { return }
+        
+        if case .done = work.operation { return }
+        
         actionContinuation.yield(work)
     }
 
