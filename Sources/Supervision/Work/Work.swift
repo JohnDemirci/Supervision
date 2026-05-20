@@ -179,7 +179,7 @@ extension Work {
     ///
     /// - Returns: Work for subscription.
     public static func subscribe<Value: Sendable, S>(
-        config: RunConfiguration = .init(fireAndForget: true),
+        config: RunConfiguration = .init(fireAndForget: true, isSubscription: true),
         stream: @escaping @Sendable (Environment) async throws -> S,
         map: @escaping @Sendable (Result<Value, Error>) -> Output
     ) -> Self
@@ -190,7 +190,7 @@ extension Work {
         return Work(
             operation: .run(
                 Run(
-                    configuration: config.fireAndForget ? config : config.with(fireAndForget: true, isSubscription: true),
+                    configuration: config.with(fireAndForget: true, isSubscription: true),
                     execute: ExecutionContext { env, send in
                         do {
                             let sequence = try await stream(env)

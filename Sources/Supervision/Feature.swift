@@ -230,11 +230,8 @@ extension Feature {
     /// - Parameters:
     ///    - action: Action to be performed
     public func send(_ action: Action) {
-        logger.debug("\( String("\(action) is received by \(Self.self)") )")
-
         guard continueAfterActionMapper(action) else { return }
         let work = work(from: action)
-        logger.debug("")
         guard !didHandleCancellation(from: work) else { return }
         
         if case .done = work.operation { return }

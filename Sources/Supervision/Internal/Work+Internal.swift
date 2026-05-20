@@ -44,10 +44,16 @@ struct TestPlan<Action>: @unchecked Sendable {
 
 struct ExecutionContext<Action, Dependency>: Hashable, Sendable {
     let id: UUID
-    let execution: @Sendable (Dependency, @escaping @Sendable (Action) async -> Void) async -> Void
+    let execution: @Sendable (
+        Dependency,
+        @escaping @Sendable (Action) async -> Void
+    ) async -> Void
 
     init(
-        execution: @Sendable @escaping (Dependency, @Sendable @escaping (Action) async -> Void) async -> Void
+        execution: @Sendable @escaping (
+            Dependency,
+            @Sendable @escaping (Action) async -> Void
+        ) async -> Void
     ) {
         self.id = UUID()
         self.execution = execution

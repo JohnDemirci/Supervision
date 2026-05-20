@@ -26,10 +26,10 @@ public struct Context<State>: ~Copyable, ~Escapable {
     @inline(__always)
     public subscript<Value>(dynamicMember keyPath: WritableKeyPath<State, Value>) -> Value {
         _read {
-            yield state[keyPath: keyPath]
+            yield statePointer.pointee[keyPath: keyPath]
         }
         nonmutating _modify {
-            yield &state[keyPath: keyPath]
+            yield &statePointer.pointee[keyPath: keyPath]
         }
     }
 
