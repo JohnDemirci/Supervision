@@ -9,6 +9,35 @@ import SwiftUI
 
 // MARK: - SwiftUI Binding Support
 
+extension ComposedFeature {
+    public func binding<Value>(
+        _ keyPath: KeyPath<State, Value>,
+        send action: @escaping (Value) -> Action,
+        animation: Animation? = nil
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                self._state[keyPath: keyPath]
+            },
+            set: { newValue, transaction in
+                // Determine which animation to use
+                // Priority: transaction.animation > custom animation > none
+                let effectiveAnimation = transaction.animation ?? animation
+
+                if let animation = effectiveAnimation {
+                    // Apply animation when sending action
+                    withAnimation(animation) {
+                        self.send(action(newValue))
+                    }
+                } else {
+                    // No animation - immediate update
+                    self.send(action(newValue))
+                }
+            }
+        )
+    }
+}
+
 extension Feature {
     /// Creates a SwiftUI Binding that sends an action when the value changes
     ///
