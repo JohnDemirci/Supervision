@@ -1,5 +1,4 @@
 // swift-tools-version: 6.2
-// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
@@ -19,7 +18,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/swift-issue-reporting.git", from: .init(1, 8, 1)),
+        .package(
+            url: "https://github.com/pointfreeco/xctest-dynamic-overlay",
+            from: "1.8.1"
+        ),
         .package(
             url: "https://github.com/JohnDemirci/ValueObservation.git",
             .upToNextMajor(from: "1.0.3")
@@ -29,13 +31,13 @@ let package = Package(
         .target(
             name: "Supervision",
             dependencies: [
-                .product(name: "IssueReporting", package: "swift-issue-reporting"),
+                .product(name: "IssueReporting", package: "xctest-dynamic-overlay"),
                 .product(name: "ValueObservation", package: "ValueObservation"),
             ],
             swiftSettings: [
                 .enableExperimentalFeature("LifetimeDependence"),
                 .enableExperimentalFeature("Lifetimes"),
-            ],
+            ]
         ),
         .testTarget(
             name: "SupervisionTests",
