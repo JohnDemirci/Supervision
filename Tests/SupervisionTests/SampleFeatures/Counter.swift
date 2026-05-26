@@ -20,7 +20,11 @@ struct CounterFeature: FeatureBlueprint {
         case decrement
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .increment:
             context.counter += 1

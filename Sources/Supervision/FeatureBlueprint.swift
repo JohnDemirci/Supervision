@@ -85,7 +85,11 @@ public protocol FeatureBlueprint: Sendable {
     ///    - context: The context of the ``State``
     ///
     /// - Returns: ``Work`` to be performed.
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork
 
     init()
 }

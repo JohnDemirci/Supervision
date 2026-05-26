@@ -32,10 +32,38 @@ public final class ComposedFeature<C: Composed>: Observable {
 
     @usableFromInline
     internal var _state: State
-    
+
+    private let actionMapper: ((Action) -> C.Parents.Actions?)?
+    private let isPreview: Bool
+
+    #if DEBUG
+    public static func preview(
+        _ composed: C,
+        actionMapper: ((Action) -> C.Parents.Actions)? = nil
+    ) -> Self {
+        Self(
+            composed: composed,
+            actionMapper: actionMapper
+        )
+    }
+
+    private init(
+        composed: C,
+        actionMapper: ((Action) -> C.Parents.Actions?)? = nil
+    ) {
+        self.composed = composed
+        self._state = composed.mapState()
+        self.actionMapper = actionMapper
+        self.isPreview = true
+        observe()
+    }
+    #endif
+
     init(composed: C) {
         self.composed = composed
         self._state = composed.mapState()
+        self.isPreview = false
+        self.actionMapper = nil
         observe()
     }
 
@@ -52,6 +80,13 @@ public final class ComposedFeature<C: Composed>: Observable {
     }
 
     public func send(_ action: Action) {
+        if isPreview {
+            if let actions = actionMapper?(action) {
+                composed.parents.send(actions)
+                return
+            }
+        }
+
         composed.parents.send(composed.mapAction(action))
     }
 }

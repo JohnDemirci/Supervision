@@ -331,7 +331,8 @@ extension Feature {
                 action: action,
                 context: Context<F.State>(
                     statePointer: pointer
-                )
+                ),
+                featureID: id
             )
         }
     }

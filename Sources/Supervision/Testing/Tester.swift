@@ -41,7 +41,11 @@ extension Tester {
                 statePointer: pointer
             )
 
-            return blueprint.process(action: action, context: context)
+            return blueprint.process(
+                action: action,
+                context: context,
+                featureID: id
+            )
         }
 
         assertion?(_state)

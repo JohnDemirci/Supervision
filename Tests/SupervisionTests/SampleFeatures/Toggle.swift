@@ -18,7 +18,11 @@ struct ToggleFeature: FeatureBlueprint {
         case toggle
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .toggle:
             context.isToggled.toggle()

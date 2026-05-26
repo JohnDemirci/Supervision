@@ -21,7 +21,11 @@ private struct CussFeature: FeatureBlueprint {
     typealias Action = Void
     typealias Dependency = Void
     
-    func process(action: Void, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Void,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         .done
     }
 }

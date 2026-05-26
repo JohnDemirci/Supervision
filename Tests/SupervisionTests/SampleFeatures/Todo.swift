@@ -26,7 +26,11 @@ struct TodoFeature: FeatureBlueprint {
         let client: TodoClient
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .add(let todo):
             return .run { dependency in
