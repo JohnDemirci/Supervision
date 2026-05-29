@@ -276,26 +276,28 @@ extension Work {
     ///
     /// - Returns: A ``Work`` merged with the provided works.
     public static func merge(_ works: [Work<Output, Environment>]) -> Self {
-        let nonEmptyWorks = works.filter {
+        let validWorks = works.filter {
             if case .done = $0.operation { return false }
+            if case .concatenate = $0.operation { return false }
+            if case .merge = $0.operation { return false }
             return true
         }
 
-        guard nonEmptyWorks.count <= _maxGroupedWorks else {
+        guard validWorks.count <= _maxGroupedWorks else {
             reportIssue("exceeded the limit for the number of works")
             return .done
         }
 
-        if nonEmptyWorks.isEmpty {
+        if validWorks.isEmpty {
             reportIssue("provided an empty list of non-empty works.")
             return .done
         }
 
-        if nonEmptyWorks.count == 1 {
-            return nonEmptyWorks.first!
+        if validWorks.count == 1 {
+            return validWorks.first!
         }
 
-        return Work(operation: .merge(nonEmptyWorks))
+        return Work(operation: .merge(validWorks))
     }
 
     /// A Work type that runs multiple works sequentially.
@@ -319,26 +321,28 @@ extension Work {
     ///
     /// - Returns: ``Work`` containing the provided works to be run sequentially.
     public static func concatenate(_ works: [Work<Output, Environment>]) -> Self {
-        let nonEmptyWorks = works.filter {
+        let validWorks = works.filter {
             if case .done = $0.operation { return false }
+            if case .concatenate = $0.operation { return false }
+            if case .merge = $0.operation { return false }
             return true
         }
 
-        guard nonEmptyWorks.count <= _maxGroupedWorks else {
+        guard validWorks.count <= _maxGroupedWorks else {
             reportIssue("exceeded the limit for the number of works")
             return .done
         }
 
-        if nonEmptyWorks.isEmpty {
+        if validWorks.isEmpty {
             reportIssue("provided an empty list of non-empty works.")
             return .done
         }
 
-        if nonEmptyWorks.count == 1 {
-            return nonEmptyWorks.first!
+        if validWorks.count == 1 {
+            return validWorks.first!
         }
 
-        return Work(operation: .concatenate(nonEmptyWorks))
+        return Work(operation: .concatenate(validWorks))
     }
 }
 

@@ -103,7 +103,7 @@ public final class MergeInspection<Action, Environment>: _Inspection {
                 return
             }
 
-            let index = childInspections.firstIndex(where: { $0.id == id })
+            let index = childInspections.firstIndex(where: { $0.id == cancelerID })
 
             guard let index else {
                 reportIssue("Attempting to remove an inspection when there is none")
