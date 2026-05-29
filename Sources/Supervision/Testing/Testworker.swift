@@ -180,7 +180,9 @@ private extension TestWorker {
                     didFound = true
 
                     for childInspection in concreteInspection.childInspections {
-                        childInspection.didComplete = true
+                        if let x = childInspection as? RunInspection<Action, Environment> {
+                            x.didComplete = true
+                        }
                     }
 
                     concreteInspection.childInspections.removeAll()
@@ -198,7 +200,9 @@ private extension TestWorker {
                     didFound = true
 
                     for childInspection in concreteInspection.childInspections {
-                        childInspection.didComplete = true
+                        if let x = childInspection as? RunInspection<Action, Environment> {
+                            x.didComplete = true
+                        }
                     }
 
                     concreteInspection.childInspections.removeAll()
@@ -233,6 +237,9 @@ private extension TestWorker {
         switch event {
         case .didComplete(let id):
             queue.removeAll { $0.id == id }
+
+        case .didCancel(cancelerID: let cancelerID, canceleeID: let cancelleeID):
+            performCancellation(cancelerID: cancelerID, cancelleeID: cancelleeID)
         }
     }
 
@@ -240,6 +247,86 @@ private extension TestWorker {
         switch event {
         case .didComplete(let id):
             queue.removeAll { $0.id == id }
+
+        case .didCancel(cancelerID: let cancelerID, canceleeID: let cancelleeID):
+            performCancellation(cancelerID: cancelerID, cancelleeID: cancelleeID)
+        }
+    }
+}
+
+private extension TestWorker {
+    func performCancellation(cancelerID: AnyHashableSendable, cancelleeID: AnyHashableSendable) {
+        var didFound = false
+
+        for inspection in queue {
+            switch inspection.work.operation {
+            case .done, .cancel:
+                continue
+            case .run:
+                if inspection.id == cancelleeID {
+                    didFound = true
+
+                    guard let x = try? inspection.assertRun() else {
+                        continue
+                    }
+
+                    x.didComplete = true
+                    break
+                }
+            case .concatenate:
+                guard let concreteInspection = try? inspection.assertConcatenate() else { continue }
+
+                let childIndex = concreteInspection.childInspections.firstIndex {
+                    $0.id == cancelleeID
+                }
+
+                guard childIndex != nil else { continue }
+
+                didFound = true
+
+                for childInspection in concreteInspection.childInspections {
+                    if let x = childInspection as? RunInspection<Action, Environment> {
+                        x.didComplete = true
+                    }
+                }
+
+                concreteInspection.childInspections.removeAll()
+                break
+
+            case .merge:
+                guard let concreteInspection = try? inspection.assertMerge() else { continue }
+
+                let childIndex = concreteInspection.childInspections.firstIndex {
+                    $0.id == cancelleeID
+                }
+
+                guard childIndex != nil else { continue }
+
+                didFound = true
+
+                for childInspection in concreteInspection.childInspections {
+                    if let x = childInspection as? RunInspection<Action, Environment> {
+                        x.didComplete = true
+                    }
+                }
+
+                concreteInspection.childInspections.removeAll()
+            }
+        }
+
+        if !didFound {
+            for inspection in subscriptionQueue {
+                if inspection.id == cancelleeID {
+                    didFound = true
+                    inspection.didComplete = true
+                    break
+                }
+            }
+        }
+
+        guard didFound else {
+            reportIssue("Could not find the target inspection to cancel")
+            return
         }
     }
 }

@@ -9,10 +9,11 @@ import Foundation
 import IssueReporting
 
 public final class ConcatenateInspection<Action, Environment>: _Inspection {
-    typealias ChildInspection = RunInspection<Action, Environment>
+    typealias ChildInspection = any Inspection
 
     enum Event {
         case didComplete(AnyHashableSendable)
+        case didCancel(cancelerID: AnyHashableSendable, canceleeID: AnyHashableSendable)
     }
 
     public typealias Action = Action
@@ -31,7 +32,7 @@ public final class ConcatenateInspection<Action, Environment>: _Inspection {
         }
     }
 
-    var childInspections: [RunInspection<Action, Environment>] {
+    var childInspections: [any Inspection] {
         didSet {
             if childInspections.isEmpty {
                 sendEvent(.didComplete(id))
@@ -57,9 +58,20 @@ public final class ConcatenateInspection<Action, Environment>: _Inspection {
 
         self.originalNumberOfChildren = children.count
 
-        self.childInspections = children.map {
-            RunInspection(work: $0) { [weak self] event in
-                self?.handle(event: event)
+        self.childInspections = children.compactMap {
+            switch $0.operation {
+            case .run:
+                return RunInspection(work: $0) { [weak self] event in
+                    self?.handleRunInspectionEvent(event)
+                }
+
+            case .cancel:
+                return CancelInspection(work: $0) { [weak self] event in
+                    self?.handleCancellationInspectionEvent(event)
+                }
+
+            default:
+                return nil
             }
         }
     }
@@ -71,7 +83,7 @@ public final class ConcatenateInspection<Action, Environment>: _Inspection {
         }
     }
 
-    func handle(event: RunInspection<Action, Environment>.Event) {
+    func handleRunInspectionEvent(_ event: RunInspection<Action, Environment>.Event) {
         switch event {
         case .didComplete(let id):
             guard childInspections.count > 0 else {
@@ -85,6 +97,25 @@ public final class ConcatenateInspection<Action, Environment>: _Inspection {
                 reportIssue("out of order inspection detected")
                 return
             }
+
+            childInspections.removeFirst()
+        }
+    }
+
+    func handleCancellationInspectionEvent(_ event: CancelInspection<Action, Environment>.Event) {
+        switch event {
+        case .cancellationStarted(canceler: let cancelerID, cancellee: let canceleeID):
+            guard childInspections.count > 0 else {
+                reportIssue("Received an event from a child that no longer exists")
+                return
+            }
+
+            guard childInspections.first?.id == cancelerID else {
+                reportIssue("Mismatching IDs")
+                return
+            }
+
+            sendEvent(.didCancel(cancelerID: cancelerID, canceleeID: canceleeID))
 
             childInspections.removeFirst()
         }

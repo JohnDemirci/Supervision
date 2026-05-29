@@ -9,19 +9,20 @@ import Foundation
 import IssueReporting
 
 public final class MergeInspection<Action, Environment>: _Inspection {
-    public typealias ChildInspection = RunInspection<Action, Environment>
+    public typealias ChildInspection = any Inspection
     public typealias Action = Action
     public typealias Environment = Environment
 
     enum Event {
         case didComplete(AnyHashableSendable)
+        case didCancel(cancelerID: AnyHashableSendable, canceleeID: AnyHashableSendable)
     }
 
     public let work: InspectedWork
     public var scope: InspectionScope { .merge }
     public let id: AnyHashableSendable
 
-    var childInspections: [RunInspection<Action, Environment>] {
+    var childInspections: [any Inspection] {
         didSet {
             if childInspections.isEmpty {
                 sendEvent(.didComplete(id))
@@ -57,14 +58,25 @@ public final class MergeInspection<Action, Environment>: _Inspection {
 
         self.originalNumberOfChildren = children.count
 
-        self.childInspections = children.map {
-            RunInspection(work: $0) { [weak self] event in
-                self?.handle(event: event)
+        self.childInspections = children.compactMap {
+            switch $0.operation {
+            case .run:
+                return RunInspection(work: $0) { [weak self] event in
+                    self?.handleRunInspectionEvent(event)
+                }
+
+            case .cancel:
+                return CancelInspection(work: $0) { [weak self] event in
+                    self?.handleCancellationInspectionEvent(event)
+                }
+
+            default:
+                return nil
             }
         }
     }
 
-    func handle(event: RunInspection<Action, Environment>.Event) {
+    func handleRunInspectionEvent(_ event: RunInspection<Action, Environment>.Event) {
         switch event {
         case .didComplete(let id):
             guard childInspections.count > 0 else {
@@ -78,6 +90,27 @@ public final class MergeInspection<Action, Environment>: _Inspection {
                 reportIssue("Attempting to remove an inspection when there is none")
                 return
             }
+
+            childInspections.remove(at: index)
+        }
+    }
+
+    func handleCancellationInspectionEvent(_ event: CancelInspection<Action, Environment>.Event) {
+        switch event {
+        case .cancellationStarted(canceler: let cancelerID, cancellee: let canceleeID):
+            guard childInspections.count > 0 else {
+                reportIssue("Received an event from a child that no longer exists")
+                return
+            }
+
+            let index = childInspections.firstIndex(where: { $0.id == id })
+
+            guard let index else {
+                reportIssue("Attempting to remove an inspection when there is none")
+                return
+            }
+
+            sendEvent(.didCancel(cancelerID: cancelerID, canceleeID: canceleeID))
 
             childInspections.remove(at: index)
         }
