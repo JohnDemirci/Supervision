@@ -288,8 +288,9 @@ Support communication patterns that do not require collapsing everything into on
 **Implemented in code**
 
 - `Shared` projects a focused value from one live feature for another consumer to observe.
-- `Broadcaster` provides actor-based async pub/sub for loosely coupled message fan-out.
-- `BroadcastMessage` standardizes the message shape with `date`, `title`, and `sender`.
+- `Broadcaster` provides actor-based async pub/sub filtered by feature-owned message kinds.
+- Each `Broadcaster.subscribe` call returns an independent stream while registrations combine by feature ID.
+- `BroadcastMessage` standardizes the message shape with `kind`, `date`, `title`, and `sender`.
 
 **Example**
 
@@ -302,14 +303,27 @@ let count = sharedCount.value
 import Foundation
 import Supervision
 
-struct AppEvent: BroadcastMessage {
+enum CounterMessageKind: BroadcastMessageKind {
+    case counterUpdated
+}
+
+enum SessionMessageKind: BroadcastMessageKind {
+    case signedOut
+}
+
+struct CounterEvent: BroadcastMessage {
+    let kind: CounterMessageKind
     let date: Date
     let title: String
     let sender: ReferenceIdentifier?
 }
 
 let broadcaster = Broadcaster()
-let stream = await broadcaster.subscribe(id: counterFeature.id)
+let stream = await broadcaster.subscribe(
+    to: CounterMessageKind.counterUpdated,
+    SessionMessageKind.signedOut,
+    id: counterFeature.id
+)
 
 Task {
     for await event in stream {
@@ -318,7 +332,8 @@ Task {
 }
 
 await broadcaster.broadcast(
-    message: AppEvent(
+    message: CounterEvent(
+        kind: .counterUpdated,
         date: .now,
         title: "Counter updated",
         sender: counterFeature.id

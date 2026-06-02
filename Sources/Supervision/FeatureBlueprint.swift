@@ -72,6 +72,8 @@ public protocol FeatureBlueprint: Sendable {
     /// Source of truth for the Feature's state
     associatedtype State: ObservableValue
 
+    associatedtype Event: Sendable = Void
+
     /// Actions that are dispatched, or a result of users' interactions
     associatedtype Action: Sendable
 

@@ -281,18 +281,34 @@ let dashboard = Composed.of(counterFeature, toggleFeature).composedBy(blueprint)
 
 ## Broadcasting
 
+Each `subscribe` call returns an independent stream. Calls that use the same feature ID combine
+their registered message kinds while retaining separate stream lifecycles.
+
 ```swift
 import Foundation
 import Supervision
 
-struct AppEvent: BroadcastMessage {
+enum CounterMessageKind: BroadcastMessageKind {
+    case counterUpdated
+}
+
+enum SessionMessageKind: BroadcastMessageKind {
+    case signedOut
+}
+
+struct CounterEvent: BroadcastMessage {
+    let kind: CounterMessageKind
     let date: Date
     let title: String
     let sender: ReferenceIdentifier?
 }
 
 let broadcaster = Broadcaster()
-let stream = await broadcaster.subscribe(id: feature.id)
+let stream = await broadcaster.subscribe(
+    to: CounterMessageKind.counterUpdated,
+    SessionMessageKind.signedOut,
+    id: feature.id
+)
 
 Task {
     for await event in stream {
@@ -301,7 +317,8 @@ Task {
 }
 
 await broadcaster.broadcast(
-    message: AppEvent(
+    message: CounterEvent(
+        kind: .counterUpdated,
         date: .now,
         title: "Counter updated",
         sender: feature.id
