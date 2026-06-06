@@ -32,11 +32,11 @@ public enum FeatureState<F: FeatureBlueprint>: Equatable {
     }
 }
 
-public struct FeatureStateViewModifier<F: FeatureBlueprint>: ViewModifier {
+private struct FeatureStateViewModifier<F: FeatureBlueprint>: ViewModifier {
     @Binding private var state: FeatureState<F>
     private let feature: Feature<F>
 
-    public init(
+    init(
         state: Binding<FeatureState<F>>,
         feature: Feature<F>
     ) {
@@ -70,8 +70,8 @@ public struct FeatureStateViewModifier<F: FeatureBlueprint>: ViewModifier {
 }
 
 public struct FeatureStateView<F: FeatureBlueprint, C: View>: View {
-    @Binding public var state: FeatureState<F>
-    public let content: (Feature<F>) -> C
+    @Binding private var state: FeatureState<F>
+    private let content: (Feature<F>) -> C
 
     public init(
         state: Binding<FeatureState<F>>,
