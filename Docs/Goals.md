@@ -247,6 +247,7 @@ Make live features convenient to use from SwiftUI while keeping the architectura
 - `binding(_:send:animation:)` routes SwiftUI writes through actions.
 - `directBinding(_:animation:)` directly mutates feature state for UI-only or high-frequency interactions.
 - `isPresent(keyPath:animation:)` creates `Binding<Bool>` for optional presentation state.
+- `FeatureStateView.instantiate(with:)` attaches a view to a feature once; `FeatureState.idle` is only the pre-initialization placeholder and is not a reset state after initialization.
 - `Feature.makePreview(state:previewActionMapper:)` is available in `DEBUG` builds for preview-only wiring.
 
 **Example**
