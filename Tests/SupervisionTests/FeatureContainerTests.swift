@@ -49,4 +49,53 @@ struct FeatureContainerTests {
         
         #expect(container.count == 3)
     }
+
+    @Test
+    func `testing container returns the injected feature`() {
+        let injected = Feature<CounterFeature>(state: .init())
+        let container = TestingFeatureContainer<Void>(features: [injected])
+
+        let resolved = container.feature(
+            type: CounterFeature.self,
+            state: .init(counter: 100)
+        )
+
+        #expect(resolved === injected)
+        #expect(resolved.state.counter == 0)
+    }
+
+    @Test
+    func `testing container does not evaluate the dependency closure`() {
+        let injected = Feature<TodoFeature>.makePreview(
+            state: .init(todos: ["Preview todo"]),
+            previewActionMapper: nil
+        )
+        let container = TestingFeatureContainer<Void>(features: [injected])
+
+        let resolved = container.feature(
+            type: TodoFeature.self,
+            state: .init()
+        ) { _ in
+            Issue.record("The testing container evaluated a dependency closure")
+            return .init(client: TodoClient())
+        }
+
+        #expect(resolved === injected)
+        #expect(resolved.state.todos == ["Preview todo"])
+    }
+
+    @Test
+    func `test factory returns the container abstraction`() {
+        let injected = Feature<CounterFeature>(state: .init(counter: 42))
+        let container: any ContainerManagement<Void> = TestingFeatureContainer<Void>.test(
+            features: [injected]
+        )
+
+        let resolved = container.feature(
+            type: CounterFeature.self,
+            state: .init()
+        )
+
+        #expect(resolved === injected)
+    }
 }

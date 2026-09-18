@@ -6,44 +6,78 @@
 //
 
 import Foundation
+import Observation
+import SwiftUI
 
-///
-/// A lightweight, observable registry that creates, caches, and hands out Feature instances scoped by a dependency context.
-///
-/// FeatureContainer is responsible for:
-/// - Holding a shared dependency object (of generic type `Dependency`) used to construct features.
-/// - Lazily creating Feature instances on demand and returning cached instances for the same identity.
-/// - Managing a weak-to-weak map of features, allowing automatic cleanup when no strong references remain.
-/// - Operating on the main actor and participating in SwiftUI-style observation via `@Observable`.
-///
-/// Key behaviors:
-/// - Caching: Features are stored in a weak-to-weak NSMapTable keyed by a ReferenceIdentifier. If a Feature
-///   is deallocated (no remaining strong references), it will be recreated upon the next request.
-/// - Identity: When requesting a feature with identifiable state, the identity is derived from `state.id`,
-///   ensuring that the same state identity returns the same Feature instance.
-/// - Dependency scoping: A closure can transform the container’s shared `Dependency` into the specific
-///   dependency required by the requested Feature, enabling modular composition.
-///
-/// Concurrency & Observation:
-/// - Annotated with `@MainActor`, meaning all interactions occur on the main actor.
-///
-/// Type Parameters:
-/// - Dependency: The shared dependency type held by the container and used to derive per-feature dependencies.
-///
-/// Memory Semantics:
-/// - Uses a weak-to-weak map for features: features are not strongly retained by the container.
-///   If a feature is no longer referenced elsewhere, it may be deallocated and recreated on demand.
+// MARK: - ContainerManagement
+
+public protocol ContainerManagement<Dependency>: Observable {
+
+    associatedtype Dependency
+
+    @MainActor
+    func composedFeature<C: Composed>(
+        composed: C
+    ) -> ComposedFeature<C>
+
+    @MainActor
+    func feature<F: FeatureBlueprint>(
+        state: F.State,
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
+    ) -> Feature<F>
+    where F.State: Identifiable
+
+    @MainActor
+    func feature<F: FeatureBlueprint>(
+        type: F.Type,
+        state: F.State,
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
+    ) -> Feature<F>
+
+    @MainActor
+    func feature<F: FeatureBlueprint>(
+        type: F.Type,
+        state: F.State
+    ) -> Feature<F>
+    where F.Dependency == Void
+
+    @MainActor
+    func feature<F: FeatureBlueprint>(
+        state: F.State
+    ) -> Feature<F>
+    where F.Dependency == Void, F.State: Identifiable
+}
+
+
+// MARK: - ContainerFeature
+
+/// Type-erased access to a feature that can be injected into a testing container.
+@MainActor
+public protocol ContainerFeature: AnyObject {
+
+    var id: ReferenceIdentifier { get }
+}
+
+extension Feature: ContainerFeature {}
+
+
+// MARK: - FeatureContainer
+
+/// A lightweight, observable registry that creates, caches, and hands out
+/// Feature instances scoped by a dependency context.
 @Observable
 @MainActor
-public final class FeatureContainer<Dependency> {
+public final class FeatureContainer<Dependency>: ContainerManagement {
+
     private var features: NSMapTable<ReferenceIdentifier, AnyObject>
+
     private let dependency: Dependency
 
     public init(dependency: Dependency) {
         self.dependency = dependency
-        features = .weakToWeakObjects()
+        self.features = .weakToWeakObjects()
     }
-    
+
     var count: Int {
         features.count
     }
@@ -52,103 +86,424 @@ public final class FeatureContainer<Dependency> {
         id: ReferenceIdentifier,
         create: @MainActor () -> Feature<F>
     ) -> Feature<F> {
+
         if let existing = features.object(forKey: id) {
-            return unsafeDowncast(existing, to: Feature<F>.self)
+            return unsafeDowncast(
+                existing,
+                to: Feature<F>.self
+            )
         }
+
         let feature = create()
-        features.setObject(feature, forKey: feature.id)
+
+        features.setObject(
+            feature,
+            forKey: feature.id
+        )
+
         return feature
     }
-    
+
     private func getOrCreate<C: Composed>(
         id: ReferenceIdentifier,
         create: @MainActor () -> ComposedFeature<C>
     ) -> ComposedFeature<C> {
+
         if let existing = features.object(forKey: id) {
-            return unsafeDowncast(existing, to: ComposedFeature<C>.self)
+            return unsafeDowncast(
+                existing,
+                to: ComposedFeature<C>.self
+            )
         }
-        
+
         let composed = create()
-        features.setObject(composed, forKey: id)
+
+        features.setObject(
+            composed,
+            forKey: id
+        )
+
         return composed
     }
 }
 
+
+// MARK: Feature creation
+
 extension FeatureContainer {
+
     public func composedFeature<C: Composed>(
         composed: C
     ) -> ComposedFeature<C> {
-        getOrCreate(id: composed.parents.id) {
-            ComposedFeature(composed: composed)
-        }
-    }
-    /// Provides a Feature
-    ///
-    /// ## Behavior ##
-    /// - If a Feature instance for the computed identifier already exists in the container, it is returned.
-    /// - Otherwise, a new Feature is created, stored in the container, and returned.
-    /// - The identifier is derived from `state.id`, so the same identifiable state yields the same Feature instance.
-    ///
-    /// - Parameters:
-    ///    - state: The initial state for the feature. Its `id` is used to compute the feature’s identity.
-    ///    - dependencyClosure: A closure that transforms the container’s `Dependency` into the specific
-    ///   dependency required by the feature `F`.
-    ///
-    /// - Returns:
-    ///    - ``Feature``: A `Feature<F>` bound to the provided state and dependency.
-    public func feature<F: FeatureBlueprint>(
-        state: F.State,
-        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
-    ) -> Feature<F> where F.State: Identifiable {
-        getOrCreate(id: Feature<F>.makeID(from: state.id)) {
-            Feature<F>(state: state, dependency: dependencyClosure(dependency))
+        getOrCreate(
+            id: composed.parents.id
+        ) {
+            ComposedFeature(
+                composed: composed
+            )
         }
     }
 
-    /// Returns a Feature instance for the specified feature type and state, using a dependency derived from the container.
-    ///
-    /// ## Behavior ##
-    /// - If a Feature instance for the given feature type already exists in the container, it is returned.
-    /// - Otherwise, a new Feature is created with the provided state and a dependency produced by `dependencyClosure`,
-    ///   stored in the container’s cache, and returned.
-    /// - The identifier used for caching is scoped to the feature type (not the state), ensuring a single instance
-    ///   per feature type within this container.
-    ///
-    /// - Parameters:
-    ///    - type: The concrete Feature type `F` to create or retrieve. Defaults to `F.self`.
-    ///    - state: The initial state for the feature.
-    ///    - dependencyClosure: A closure that transforms the container’s `Dependency` into the specific dependency
-    ///   required by the feature `F`.
-    ///
-    /// - Returns:
-    ///    - ``Feature``: A `Feature<F>` bound to the provided state and derived dependency.
-    ///
-    /// - Note: Use this overload when feature identity should be scoped by type rather than by state identity.
-    ///   If you want identity based on `state.id`, prefer the overload where `F.State: Identifiable`.
+    /// Provides a feature whose identity is derived from its state.
+    public func feature<F: FeatureBlueprint>(
+        state: F.State,
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
+    ) -> Feature<F>
+    where F.State: Identifiable {
+        getOrCreate(
+            id: Feature<F>.makeID(
+                from: state.id
+            )
+        ) {
+            Feature<F>(
+                state: state,
+                dependency: dependencyClosure(dependency)
+            )
+        }
+    }
+
+    /// Provides a feature whose identity is derived from its feature type.
     public func feature<F: FeatureBlueprint>(
         type _: F.Type = F.self,
         state: F.State,
         _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
     ) -> Feature<F> {
-        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))) {
-            Feature<F>(state: state, dependency: dependencyClosure(dependency))
+        getOrCreate(
+            id: ReferenceIdentifier(
+                id: ObjectIdentifier(
+                    Feature<F>.self
+                )
+            )
+        ) {
+            Feature<F>(
+                state: state,
+                dependency: dependencyClosure(dependency)
+            )
         }
     }
 
     public func feature<F: FeatureBlueprint>(
         type _: F.Type = F.self,
         state: F.State
-    ) -> Feature<F> where F.Dependency == Void {
-        getOrCreate(id: ReferenceIdentifier(id: ObjectIdentifier(Feature<F>.self))) {
-            Feature<F>(state: state, dependency: ())
+    ) -> Feature<F>
+    where F.Dependency == Void {
+
+        getOrCreate(
+            id: ReferenceIdentifier(
+                id: ObjectIdentifier(
+                    Feature<F>.self
+                )
+            )
+        ) {
+            Feature<F>(
+                state: state,
+                dependency: ()
+            )
         }
     }
 
     public func feature<F: FeatureBlueprint>(
         state: F.State
-    ) -> Feature<F> where F.Dependency == Void, F.State: Identifiable {
-        getOrCreate(id: Feature<F>.makeID(from: state.id)) {
-            Feature<F>(state: state, dependency: ())
+    ) -> Feature<F>
+    where F.Dependency == Void, F.State: Identifiable {
+
+        getOrCreate(
+            id: Feature<F>.makeID(
+                from: state.id
+            )
+        ) {
+            Feature<F>(
+                state: state,
+                dependency: ()
+            )
         }
+    }
+}
+
+
+// MARK: - TestingFeatureContainer
+
+@Observable
+@MainActor
+public final class TestingFeatureContainer<Dependency>: ContainerManagement {
+    private var features: [ReferenceIdentifier: AnyObject] = [:]
+
+    public init(
+        features: [any ContainerFeature]
+    ) {
+        for feature in features {
+            self.features[feature.id] = feature
+        }
+    }
+
+    public func feature<F: FeatureBlueprint>(
+        type _: F.Type = F.self,
+        state _: F.State,
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
+    ) -> Feature<F> {
+        injectedFeature(
+            id: Feature<F>.makeID()
+        )
+    }
+
+    public func feature<F: FeatureBlueprint>(
+        state: F.State,
+        _ dependencyClosure: @MainActor @escaping (Dependency) -> F.Dependency
+    ) -> Feature<F>
+    where F.State: Identifiable {
+        injectedFeature(
+            id: Feature<F>.makeID(
+                from: state.id
+            )
+        )
+    }
+
+    public func feature<F: FeatureBlueprint>(
+        type _: F.Type = F.self,
+        state _: F.State
+    ) -> Feature<F>
+    where F.Dependency == Void {
+        injectedFeature(
+            id: Feature<F>.makeID()
+        )
+    }
+
+    public func feature<F: FeatureBlueprint>(
+        state: F.State
+    ) -> Feature<F>
+    where F.Dependency == Void, F.State: Identifiable {
+        injectedFeature(
+            id: Feature<F>.makeID(
+                from: state.id
+            )
+        )
+    }
+
+    public func composedFeature<C: Composed>(
+        composed: C
+    ) -> ComposedFeature<C> {
+        let id = composed.parents.id
+
+        if let existing = features[id] {
+
+            guard let feature = existing as? ComposedFeature<C> else {
+                preconditionFailure(
+                    "An injected value for \(id) has an unexpected type."
+                )
+            }
+
+            return feature
+        }
+
+        let feature = ComposedFeature(
+            composed: composed
+        )
+
+        features[id] = feature
+
+        return feature
+    }
+
+    private func injectedFeature<F: FeatureBlueprint>(
+        id: ReferenceIdentifier
+    ) -> Feature<F> {
+        guard let existing = features[id] else {
+            preconditionFailure(
+                "No \(F.self) was supplied to the testing container for \(id)."
+            )
+        }
+
+        guard let feature = existing as? Feature<F> else {
+            preconditionFailure(
+                "An injected value for \(id) has an unexpected type."
+            )
+        }
+
+        return feature
+    }
+}
+
+
+// MARK: - Container factories
+
+extension ContainerManagement {
+    @MainActor
+    public static func live<D>(
+        dependency: D
+    ) -> some ContainerManagement<D> {
+        FeatureContainer(
+            dependency: dependency
+        )
+    }
+
+    @MainActor
+    public static func test<D>(
+        features: [any ContainerFeature]
+    ) -> some ContainerManagement<D> {
+        TestingFeatureContainer<D>(
+            features: features
+        )
+    }
+}
+
+
+// MARK: - Type-erased container
+
+/// Type-erases the concrete dependency specialization of a
+/// `ContainerManagement`.
+///
+/// This exists specifically so a container can cross boundaries that require
+/// one concrete type, such as SwiftUI's Environment.
+///
+/// The dependency type is recovered when the container is consumed.
+public struct AnyContainerManagement {
+    private let storage: Any
+
+    public init<D>(
+        _ container: any ContainerManagement<D>
+    ) {
+        self.storage = container
+    }
+
+    public func resolve<D>(
+        as dependencyType: D.Type = D.self
+    ) -> any ContainerManagement<D> {
+        guard let container = storage as? any ContainerManagement<D> else {
+            preconditionFailure(
+                """
+                Container dependency mismatch.
+
+                The container stored in the SwiftUI environment cannot be \
+                resolved as ContainerManagement<\(D.self)>.
+
+                Make sure the dependency type supplied to \
+                @ContainerEnvironment matches the dependency type used when \
+                the FeatureContainer was created.
+                """
+            )
+        }
+
+        return container
+    }
+}
+
+
+// MARK: Convenience factories
+
+extension AnyContainerManagement {
+    @MainActor
+    public static func live<D>(
+        dependency: D
+    ) -> AnyContainerManagement {
+        AnyContainerManagement(
+            FeatureContainer(
+                dependency: dependency
+            )
+        )
+    }
+
+    @MainActor
+    public static func test<D>(
+        dependency _: D.Type = D.self,
+        features: [any ContainerFeature]
+    ) -> AnyContainerManagement {
+        AnyContainerManagement(
+            TestingFeatureContainer<D>(
+                features: features
+            )
+        )
+    }
+}
+
+
+// MARK: - SwiftUI Environment
+
+private struct ContainerManagementEnvironmentKey: @MainActor EnvironmentKey {
+    @MainActor static var defaultValue: AnyContainerManagement? = nil
+}
+
+public extension EnvironmentValues {
+
+    /// The dependency-erased Supervision container.
+    @MainActor
+    var containerManagement: AnyContainerManagement? {
+        get {
+            self[ContainerManagementEnvironmentKey.self]
+        }
+        set {
+            self[ContainerManagementEnvironmentKey.self] = newValue
+        }
+    }
+}
+
+
+// MARK: - Typed Environment accessor
+
+/// Reads the dependency-erased container from SwiftUI's Environment and
+/// restores its dependency type.
+///
+/// Example:
+///
+/// ```swift
+/// @ContainerEnvironment<AppDependencies>
+/// private var container
+/// ```
+@MainActor
+@propertyWrapper
+public struct ContainerEnvironment<Dependency>: DynamicProperty {
+
+    @Environment(\.containerManagement)
+    private var container
+
+    public init() {}
+
+    public var wrappedValue: any ContainerManagement<Dependency> {
+
+        guard let container else {
+            preconditionFailure(
+                """
+                No Supervision container was found in the SwiftUI environment.
+
+                Inject one with:
+
+                    .containerManagement(
+                        FeatureContainer(dependency: dependencies)
+                    )
+                """
+            )
+        }
+
+        return container.resolve(
+            as: Dependency.self
+        )
+    }
+}
+
+
+// MARK: - View convenience
+
+public extension View {
+
+    /// Injects a strongly typed container into SwiftUI while erasing its
+    /// dependency specialization only at the Environment boundary.
+    func containerManagement<D>(
+        _ container: some ContainerManagement<D>
+    ) -> some View {
+
+        environment(
+            \.containerManagement,
+            AnyContainerManagement(container)
+        )
+    }
+
+    /// Injects an already type-erased container.
+    func containerManagement(
+        _ container: AnyContainerManagement
+    ) -> some View {
+
+        environment(
+            \.containerManagement,
+            container
+        )
     }
 }
