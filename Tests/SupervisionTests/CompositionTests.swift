@@ -24,7 +24,10 @@ struct CompositionTests {
         
         let dashboard = ComposedFeature(
             composed: DashboardComposition(
-                parents: .init(counterFeature, toggleFeature)
+                parents: .init(
+                    features: counterFeature, toggleFeature,
+                    composedBy: DashboardComposition.self
+                )
             )
         )
         
@@ -49,7 +52,10 @@ struct CompositionTests {
         
         let dashboard = ComposedFeature(
             composed: DashboardComposition(
-                parents: .init(counterFeature, toggleFeature)
+                parents: .init(
+                    features: counterFeature, toggleFeature,
+                    composedBy: DashboardComposition.self
+                )
             )
         )
         

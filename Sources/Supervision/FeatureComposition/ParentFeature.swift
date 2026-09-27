@@ -19,14 +19,18 @@ public struct ParentFeatures<each Blueprint: FeatureBlueprint>: ParentFeaturesPr
 
     @usableFromInline
     let features: (repeat Feature<each Blueprint>)
-
-    public init(_ features: repeat Feature<each Blueprint>) {
+    
+    public init<C: Composed>(
+        features: repeat Feature<each Blueprint>,
+        composedBy: C.Type = C.self
+    ) {
         self.features = (repeat each features)
         
         var ids: [ReferenceIdentifier] = []
         for feature in repeat each features {
             ids.append(feature.id)
         }
+        ids.append(ReferenceIdentifier(id: ObjectIdentifier(composedBy)))
         
         self.id = ReferenceIdentifier(ids)
     }

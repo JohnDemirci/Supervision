@@ -43,7 +43,10 @@ struct FeatureContainerTests {
         
         let _: ComposedFeature<DashboardComposition> = container.composedFeature(
             composed: DashboardComposition(
-                parents: ParentFeatures(counterFeature, toggleFeature)
+                parents: ParentFeatures(
+                    features: counterFeature, toggleFeature,
+                    composedBy: DashboardComposition.self
+                )
             )
         )
         
