@@ -32,80 +32,127 @@ public enum FeatureState<F: FeatureBlueprint>: Equatable {
     }
 }
 
-private struct FeatureStateViewModifier<F: FeatureBlueprint>: ViewModifier {
-    @Binding private var state: FeatureState<F>
-    private let feature: Feature<F>
+private struct FeatureStateSnapshot<each F: FeatureBlueprint>: Equatable {
+    let state: (repeat FeatureState<each F>)
+
+    init(_ state: repeat FeatureState<each F>) {
+        self.state = (repeat each state)
+    }
+
+    static func == (
+        lhs: FeatureStateSnapshot<repeat each F>,
+        rhs: FeatureStateSnapshot<repeat each F>
+    ) -> Bool {
+        for (lhsState, rhsState) in repeat (each lhs.state, each rhs.state) {
+            guard lhsState == rhsState else { return false }
+        }
+        return true
+    }
+}
+
+private struct FeatureStateViewModifier<each F: FeatureBlueprint>: ViewModifier {
+    private let state: (repeat Binding<FeatureState<each F>>)
+    private let feature: (repeat Feature<each F>)
 
     init(
-        state: Binding<FeatureState<F>>,
-        feature: Feature<F>
+        state: repeat Binding<FeatureState<each F>>,
+        feature: repeat Feature<each F>
     ) {
-        self._state = state
-        self.feature = feature
+        self.state = (repeat each state)
+        self.feature = (repeat each feature)
+    }
+
+    private var snapshot: FeatureStateSnapshot<repeat each F> {
+        FeatureStateSnapshot(repeat value(of: each state))
+    }
+
+    private func value<B: FeatureBlueprint>(
+        of state: Binding<FeatureState<B>>
+    ) -> FeatureState<B> {
+        state.wrappedValue
     }
 
     public func body(content: Content) -> some View {
         content
             .viewDidLoad {
-                switch state {
-                case .idle:
-                    state = .initialized(feature)
-                case .initialized:
-                    break
-                }
+                repeat initialize(each state, with: each feature)
             }
-            .onChange(of: state, initial: false) { oldValue, newValue in
-                guard case .idle = newValue else { return }
-
-                // Idle is only valid before first load. If an already mounted
-                // view receives an idle reset, keep the feature it already owns.
-                switch oldValue {
-                case .initialized(let feature):
-                    state = .initialized(feature)
-                case .idle:
-                    state = .initialized(feature)
-                }
+            .onChange(of: snapshot, initial: false) { oldValue, newValue in
+                repeat restore(each state, from: each oldValue.state, with: each feature)
             }
     }
-}
 
-public struct FeatureStateView<F: FeatureBlueprint, C: View>: View {
-    @Binding private var state: FeatureState<F>
-    private let content: (Feature<F>) -> C
-
-    public init(
-        state: Binding<FeatureState<F>>,
-        content: @escaping (Feature<F>) -> C
+    private func initialize<B: FeatureBlueprint>(
+        _ state: Binding<FeatureState<B>>,
+        with feature: Feature<B>
     ) {
-        self._state = state
-        self.content = content
+        guard case .idle = state.wrappedValue else { return }
+        state.wrappedValue = .initialized(feature)
     }
 
-    public var body: some View {
-        switch state {
+    private func restore<B: FeatureBlueprint>(
+        _ state: Binding<FeatureState<B>>,
+        from oldValue: FeatureState<B>,
+        with feature: Feature<B>
+    ) {
+        guard case .idle = state.wrappedValue else { return }
+
+        switch oldValue {
+        case .initialized(let oldFeature):
+            state.wrappedValue = .initialized(oldFeature)
         case .idle:
-            ProgressView()
-        case .initialized(let feature):
-            content(feature)
+            state.wrappedValue = .initialized(feature)
         }
     }
 }
 
+public struct FeatureStateView<each F: FeatureBlueprint, C: View>: View {
+    private let state: (repeat Binding<FeatureState<each F>>)
+    private let content: (repeat Feature<each F>) -> C
+
+    public init(
+        state: repeat Binding<FeatureState<each F>>,
+        content: @escaping (repeat Feature<each F>) -> C
+    ) {
+        self.state = (repeat each state)
+        self.content = content
+    }
+
+    public var body: some View {
+        if let feature = try? (repeat initializedFeature(from: each state)) {
+            content(repeat each feature)
+        } else {
+            ProgressView()
+        }
+    }
+
+    private func initializedFeature<B: FeatureBlueprint>(
+        from state: Binding<FeatureState<B>>
+    ) throws -> Feature<B> {
+        guard case .initialized(let feature) = state.wrappedValue else {
+            throw UninitializedFeatureError()
+        }
+        return feature
+    }
+}
+
 public extension FeatureStateView {
-    /// Instantiates the view with a feature for this mounted view identity.
+    /// Instantiates the view with features for this mounted view identity.
     ///
     /// After the first transition from ``FeatureState/idle`` to
-    /// ``FeatureState/initialized(_:)``, later attempts to set the binding back
+    /// ``FeatureState/initialized(_:)``, later attempts to set a binding back
     /// to ``FeatureState/idle`` are treated as invalid resets and the existing
     /// feature remains attached.
     func instantiate(
-        with f: Feature<F>
+        with feature: repeat Feature<each F>
     ) -> some View {
         modifier(
             FeatureStateViewModifier(
-                state: $state,
-                feature: f
+                state: repeat each state,
+                feature: repeat each feature
             )
         )
     }
 }
+
+private struct UninitializedFeatureError: Error {}
