@@ -14,6 +14,7 @@ feature behavior remains explicit, composable, and testable.
 - [Concurrency and lifetime](#concurrency-and-lifetime)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [AI agent skill](#ai-agent-skill)
 - [Quick start](#quick-start)
 - [Asynchronous work](#asynchronous-work)
 - [Dependencies and feature containers](#dependencies-and-feature-containers)
@@ -24,6 +25,7 @@ feature behavior remains explicit, composable, and testable.
 - [API overview](#api-overview)
 - [Project status](#project-status)
 - [Development](#development)
+- [License](#license)
 
 ## What is Supervision?
 
@@ -134,6 +136,20 @@ Import the library wherever you define or use a feature:
 ```swift
 import Supervision
 ```
+
+## AI agent skill
+
+Supervision includes a portable Agent Skills package for coding agents that implement
+and test features with the library. Install the
+[`supervision-swift`](skills/supervision-swift) skill with an Agent Skills-compatible
+tool. In Codex, ask `$skill-installer` to install:
+
+```text
+https://github.com/JohnDemirci/Supervision/tree/master/skills/supervision-swift
+```
+
+Then invoke it explicitly with `$supervision-swift`, or let a compatible agent select
+it automatically when working with Supervision APIs.
 
 ## Quick start
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Supervision for Swift"
+  short_description: "Build and test Swift features with Supervision"
+  default_prompt: "Use $supervision-swift to implement and test this Swift feature."
