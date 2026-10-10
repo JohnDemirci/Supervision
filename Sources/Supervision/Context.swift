@@ -9,7 +9,11 @@
 /// enabling controlled reads and mutations.
 ///
 /// ```swift
-/// func process(action: Action, context: borrowing Context<State>) -> FeatureWork
+/// func process(
+///     action: Action,
+///     context: borrowing Context<State>,
+///     featureID: ReferenceIdentifier
+/// ) -> FeatureWork
 /// ```
 /// You do not typically create a `Context`; it is provided by ``Feature`` when `process` is called.
 @dynamicMemberLookup

@@ -8,33 +8,30 @@
 import Foundation
 import ValueObservation
 
-/// A blueprint protocol that defines the core requirements for a feature in the Supervision architecture.
+/// Defines the state, actions, dependencies, and behavior of a Supervision feature.
 ///
-/// Conforming types model a unit of application logic with a source-of-truth `State`,
-/// a set of `Action`s that can be dispatched (typically from user interactions or side effects),
-/// and a `Dependency` container that provides external services (e.g., networking, persistence).
+/// A conforming type models one unit of application logic. Its observable `State` is the
+/// source of truth, `Action` describes every input it accepts, and `Dependency` contains
+/// the external services needed by asynchronous work.
 ///
-/// A feature processes actions into work via `process(action:context:)`, producing a `Work` value
-/// that can mutate state and/or trigger effects. Features can also declare an `observationMap` to
-/// describe dependencies between stored properties and derived (computed) properties, enabling
-/// efficient observation for value types without macros.
+/// ``process(action:context:featureID:)`` performs immediate state mutations through a
+/// borrowed ``Context`` and returns ``Work`` describing any follow-up effects. The
+/// `featureID` identifies the live feature instance processing the action.
 ///
-/// Typealiases:
-/// - `FeatureWork`: A `Work<Action, Dependency>` describing the operations to perform as a result of processing an action.
-/// - `ObservationMap`: A mapping from a computed `PartialKeyPath<State>` to the stored `PartialKeyPath<State>` keys that affect it.
+/// Associated types:
+/// - `State`: An `ObservableValue`, normally an `@ObservableValue` structure.
+/// - `Action`: The `Sendable` inputs handled by the feature.
+/// - `Dependency`: The `Sendable` services available to work returned by the feature.
 ///
-/// Associated Types:
-/// - `State`: The source-of-truth value type for the feature. Must conform to `Equatable`.
-/// - `Action`: The set of actions that drive the feature. Must conform to `Sendable`.
-/// - `Dependency`: A container of external dependencies used by the feature. Must conform to `Sendable`.
+/// `FeatureWork` is a convenience typealias for `Work<Action, Dependency>`.
 ///
 /// ## Example ##
 /// ```swift
 /// struct ProfileFeature: FeatureBlueprint {
-///     struct State: Equatable {
+///     @ObservableValue
+///     struct State {
 ///         var firstName = ""
 ///         var lastName = ""
-///         var fullName: String { "\(firstName) \(lastName)" }
 ///     }
 ///
 ///     enum Action: Sendable {
@@ -42,23 +39,21 @@ import ValueObservation
 ///         case setLastName(String)
 ///     }
 ///
-///     struct Dependency: Sendable {
-///         let analytics: AnalyticsClient
-///     }
+///     typealias Dependency = Void
 ///
-///     var observationMap: ObservationMap {
-///         [\State.fullName: [\State.firstName, \State.lastName]]
-///     }
-///
-///     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+///     func process(
+///         action: Action,
+///         context: borrowing Context<State>,
+///         featureID: ReferenceIdentifier
+///     ) -> FeatureWork {
 ///         switch action {
 ///         case .setFirstName(let name):
-///             context.modify(\.firstName, to: name)
-///             return .done
+///             context.firstName = name
 ///         case .setLastName(let name):
-///             context.modify(\.lastName, to: name)
-///             return .done
+///             context.lastName = name
 ///         }
+///
+///         return .done
 ///     }
 /// }
 /// ```

@@ -23,7 +23,7 @@ Provide a small, explicit unit of application logic with clear boundaries for st
 
 - `FeatureBlueprint` defines the shape of a feature in [Sources/Supervision/FeatureBlueprint.swift](../Sources/Supervision/FeatureBlueprint.swift).
 - `Feature` owns the live state and is the action entrypoint in [Sources/Supervision/Feature.swift](../Sources/Supervision/Feature.swift).
-- `process(action:context:)` receives a borrowed `Context<State>` and returns `Work<Action, Dependency>`.
+- `process(action:context:featureID:)` receives a borrowed `Context<State>`, the live feature identity, and returns `Work<Action, Dependency>`.
 
 **Example**
 
@@ -48,7 +48,11 @@ struct CounterFeature: FeatureBlueprint {
         var load: @Sendable () async throws -> Int
     }
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .increment:
             context.count += 1
@@ -106,7 +110,11 @@ struct ProfileFeature: FeatureBlueprint {
 
     typealias Dependency = Void
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .setFirstName(let value):
             context.firstName = value
@@ -138,7 +146,11 @@ Keep state access efficient while constraining writes to feature processing and 
 **Example**
 
 ```swift
-func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+func process(
+    action: Action,
+    context: borrowing Context<State>,
+    featureID: ReferenceIdentifier
+) -> FeatureWork {
     if context.state.count > 100 {
         context.state.isOverLimit = true
     }
@@ -200,6 +212,9 @@ Give live features stable identity so they can be reused across the app instead 
 - `Feature.makeID(from:)` combines `state.id` and feature type when `State: Identifiable`.
 - `Feature.makeID()` falls back to feature-type identity when state is not identifiable.
 - `FeatureContainer` caches live `Feature` instances in a weak-to-weak `NSMapTable`.
+- `ContainerManagement` provides one interface for live and injected containers.
+- `TestingFeatureContainer` resolves features supplied by tests and previews without evaluating live dependency closures.
+- `AnyContainerManagement` carries typed containers through SwiftUI's environment boundary.
 
 **Example**
 
@@ -220,7 +235,11 @@ struct InboxFeature: FeatureBlueprint {
 
     typealias Dependency = Void
 
-    func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    func process(
+        action: Action,
+        context: borrowing Context<State>,
+        featureID: ReferenceIdentifier
+    ) -> FeatureWork {
         switch action {
         case .rename(let value):
             context.title = value
@@ -247,8 +266,9 @@ Make live features convenient to use from SwiftUI while keeping the architectura
 - `binding(_:send:animation:)` routes SwiftUI writes through actions.
 - `directBinding(_:animation:)` directly mutates feature state for UI-only or high-frequency interactions.
 - `isPresent(keyPath:animation:)` creates `Binding<Bool>` for optional presentation state.
-- `FeatureStateView.instantiate(with:)` attaches a view to a feature once; `FeatureState.idle` is only the pre-initialization placeholder and is not a reset state after initialization.
+- `FeatureStateView.instantiate(with:)` attaches a view to one or more features once; `FeatureState.idle` is only the pre-initialization placeholder and is not a reset state after initialization.
 - `Feature.makePreview(state:previewActionMapper:)` is available in `DEBUG` builds for preview-only wiring.
+- `ComposedFeature.preview(_:actionMapper:)` provides equivalent preview wiring for compositions.
 
 **Example**
 
@@ -350,7 +370,8 @@ Build a derived feature from existing live features without introducing a separa
 
 **Implemented in code**
 
-- `ParentFeatures` groups any number of live features using parameter packs.
+- `ParentFeatures` groups any number of live features using parameter packs and
+  includes the composition type in its identity.
 - `Composed` defines how a derived feature maps actions and derives state.
 - `ComposedFeature` owns the derived state and fans actions out to the underlying parent features.
 - `updateState(context:)` lets composed state be recomputed in place.
@@ -361,24 +382,20 @@ Build a derived feature from existing live features without introducing a separa
 import Supervision
 import ValueObservation
 
-// Assuming the `CounterFeature` and `ToggleFeature` definitions
-// shown in Docs/Composition.md.
-
-@ObservableValue
-struct DashboardState {
-    var count: Int
-    var isEnabled: Bool
-}
-
 struct DashboardComposition: Composed {
+    typealias Parents = ParentFeatures<CounterFeature, ToggleFeature>
+
+    @ObservableValue
+    struct State {
+        var count: Int
+        var isEnabled: Bool
+    }
+
     enum Action: Sendable {
         case increment
         case setEnabled(Bool)
         case synchronize
     }
-
-    typealias State = DashboardState
-    typealias Parents = ParentFeatures<CounterFeature, ToggleFeature>
 
     let parents: Parents
 
@@ -395,7 +412,7 @@ struct DashboardComposition: Composed {
 
     func mapState() -> State {
         parents.withFeatures { counter, toggle in
-            DashboardState(
+            State(
                 count: counter.count,
                 isEnabled: toggle.isEnabled
             )
@@ -411,7 +428,8 @@ struct DashboardComposition: Composed {
 }
 ```
 
-For a full composition walkthrough, see [Docs/Composition.md](./Composition.md).
+For a full composition walkthrough, see
+[Feature composition](../README.md#feature-composition) in the README.
 
 ## Goal 9: Testing harness
 
@@ -421,7 +439,7 @@ Test state transitions and work shape without running real async dependencies.
 
 **Implemented in code**
 
-- `Tester` runs `process(action:context:)` against in-memory state.
+- `Tester` runs `process(action:context:featureID:)` against in-memory state.
 - `Inspection` is the common protocol for asserting returned `Work`.
 - `DoneInspection`, `CancelInspection`, `RunInspection`, `MergeInspection`, and `ConcatenateInspection` model the different work shapes.
 - `feedResult(_:inspection:)` and `feedValue(_:inspection:)` drive test plans produced by `.run` and `.subscribe`.
@@ -430,14 +448,14 @@ Test state transitions and work shape without running real async dependencies.
 
 ```swift
 import Supervision
-import XCTest
+import Testing
 
-@MainActor
-func testRefreshFlow() throws {
+@Test
+func refreshFlow() throws {
     let tester = Tester<CounterFeature>(initialState: .init())
 
     let inspection = tester.send(.refresh) { state in
-        XCTAssertTrue(state.isLoading)
+        #expect(state.isLoading)
     }
 
     let run = try inspection.assertRun()
@@ -446,8 +464,8 @@ func testRefreshFlow() throws {
         .success(10),
         inspection: run
     ) { state in
-        XCTAssertEqual(state.count, 10)
-        XCTAssertFalse(state.isLoading)
+        #expect(state.count == 10)
+        #expect(!state.isLoading)
     }
 
     try done.assertDone()

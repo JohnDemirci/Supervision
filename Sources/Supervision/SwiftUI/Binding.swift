@@ -55,7 +55,8 @@ extension Feature {
     /// ## Example Usage
     /// ```swift
     /// struct UserFeature: FeatureBlueprint {
-    ///     struct State: Equatable {
+    ///     @ObservableValue
+    ///     struct State {
     ///         var name: String = ""
     ///         var email: String = ""
     ///         var age: Int = 0
@@ -71,19 +72,23 @@ extension Feature {
     ///
     ///     typealias Dependency = Void
     ///
-    ///     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    ///     func process(
+    ///         action: Action,
+    ///         context: borrowing Context<State>,
+    ///         featureID: ReferenceIdentifier
+    ///     ) -> FeatureWork {
     ///         switch action {
     ///         case .nameChanged(let name):
-    ///             context.modify(\.name, to: name.trimmingCharacters(in: .whitespaces))
+    ///             context.name = name.trimmingCharacters(in: .whitespaces)
     ///
     ///         case .emailChanged(let email):
-    ///             context.modify(\.email, to: email.lowercased())
+    ///             context.email = email.lowercased()
     ///
     ///         case .ageChanged(let age):
-    ///             context.modify(\.age, to: max(0, min(120, age)))
+    ///             context.age = max(0, min(120, age))
     ///
     ///         case .toggleEnabled(let enabled):
-    ///             context.modify(\.isEnabled, to: enabled)
+    ///             context.isEnabled = enabled
     ///         }
     ///         return .done
     ///     }
@@ -167,7 +172,7 @@ extension Feature {
     ///
     /// ## Performance
     /// - **Getter**: Zero-copy read from state via KeyPath, O(1)
-    /// - **Setter**: Routes through send() -> process() -> context.modify()
+    /// - **Setter**: Routes through `send` and `process`
     /// - **Animation**: Applied via `withAnimation()` or `withTransaction()`
     /// - **Granular Observation**: Only views observing this keyPath are notified
     ///
@@ -229,7 +234,8 @@ extension Feature {
     /// ## Example Usage
     /// ```swift
     /// struct SettingsFeature: FeatureBlueprint {
-    ///     struct State: Equatable {
+    ///     @ObservableValue
+    ///     struct State {
     ///         var volume: Double = 50      // UI state - ok for direct binding
     ///         var brightness: Double = 75  // UI state - ok for direct binding
     ///         var username: String = ""    // Business logic - use action binding!
@@ -243,10 +249,14 @@ extension Feature {
     ///
     ///     typealias Dependency = Void
     ///
-    ///     func process(action: Action, context: borrowing Context<State>) -> FeatureWork {
+    ///     func process(
+    ///         action: Action,
+    ///         context: borrowing Context<State>,
+    ///         featureID: ReferenceIdentifier
+    ///     ) -> FeatureWork {
     ///         switch action {
     ///         case .usernameChanged(let username):
-    ///             context.modify(\.username, to: username)
+    ///             context.username = username
     ///
     ///         case .volumeChangeCompleted(let volume):
     ///             // Log final volume, trigger haptics, etc.
@@ -446,6 +456,12 @@ extension Feature {
         )
     }
 
+    /// Creates a presentation binding from optional feature state.
+    ///
+    /// The binding is `true` while the optional contains a value. Setting it to
+    /// `false` clears the optional, allowing SwiftUI presentation APIs to dismiss
+    /// through the binding. Setting it to `true` does not create a value; send an
+    /// action that populates the optional instead.
     public func isPresent<Value>(
         keyPath: WritableKeyPath<State, Value?>,
         animation: Animation? = nil

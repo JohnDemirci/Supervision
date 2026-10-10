@@ -19,7 +19,16 @@ public struct ParentFeatures<each Blueprint: FeatureBlueprint>: ParentFeaturesPr
 
     @usableFromInline
     let features: (repeat Feature<each Blueprint>)
-    
+
+    /// Groups live parent features for a specific composition type.
+    ///
+    /// The composition type participates in this parent pack's identity so that
+    /// distinct compositions using the same features do not collide in a
+    /// ``FeatureContainer``.
+    ///
+    /// - Parameters:
+    ///   - features: The parent features, ordered to match the blueprint pack.
+    ///   - composedBy: The composition type that owns this parent pack.
     public init<C: Composed>(
         features: repeat Feature<each Blueprint>,
         composedBy: C.Type = C.self

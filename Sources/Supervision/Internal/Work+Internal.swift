@@ -1,5 +1,5 @@
 //
-//  Work+TestPlan.swift
+//  Work+Internal.swift
 //  Supervision
 //
 //  Created by John Demirci on 1/15/26.

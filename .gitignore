@@ -10,5 +10,4 @@ DerivedData/
 .claude/
 buildServer.json.bak
 AGENTS.md
-/Docs
 .vscode/settings.json

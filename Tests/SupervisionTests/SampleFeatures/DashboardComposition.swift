@@ -7,26 +7,20 @@
 
 import Supervision
 
-@ObservableValue
-struct DashboardState {
-    var count: Int
-    var isEnabled: Bool
-    
-    init(count: Int, isEnabled: Bool) {
-        self.count = count
-        self.isEnabled = isEnabled
-    }
-}
-
 struct DashboardComposition: Composed {
+    typealias Parents = ParentFeatures<CounterFeature, ToggleFeature>
+
+    @ObservableValue
+    struct State {
+        var count: Int
+        var isEnabled: Bool
+    }
+
     enum Action: Sendable {
         case increment
         case toggle
         case synchronize
     }
-
-    typealias State = DashboardState
-    typealias Parents = ParentFeatures<CounterFeature, ToggleFeature>
 
     let parents: Parents
 
@@ -43,7 +37,7 @@ struct DashboardComposition: Composed {
 
     func mapState() -> State {
         parents.withFeatures { counter, toggle in
-            DashboardState(
+            State(
                 count: counter.counter,
                 isEnabled: toggle.isToggled
             )
