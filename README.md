@@ -794,3 +794,7 @@ swift package describe
 ```
 
 Tests live in `Tests/SupervisionTests` and use Swift Testing.
+
+## License
+
+Supervision is available under the [BSD Zero Clause License](LICENSE) (`0BSD`).
